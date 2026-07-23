@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -21,9 +21,6 @@ dependencies = [
 dev = ["pytest", "ruff", "mypy", "pre-commit"]
 docs = ["sphinx", "sphinx-rtd-theme", "sphinx-autobuild"]
 
-[build-system]
-requires = ["hatchling", "hatch-vcs"]
-build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
@@ -41,4 +38,4 @@ select = ["E", "F", "I", "W", "UP", "B"]
 python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false  # tighten this later once fully annotated
+disallow_untyped_defs = false
