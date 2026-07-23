@@ -10,10 +10,10 @@ sys.path.insert(0, os.path.abspath("../src"))
 
 extensions = [
     "sphinx.ext.autodoc",
-    "sphinx.ext.napoleon",    # Supports Google and NumPy style docstrings
-    "sphinx.ext.viewcode",    # Adds links to highlighted source code
-    "sphinx.ext.intersphinx", # Links to external documentation (e.g., Python standard library)
-    "sphinx.ext.autosummary", # Generates stub files for autodoc automatically
+    "sphinx.ext.napoleon",  # Supports Google and NumPy style docstrings
+    "sphinx.ext.viewcode",  # Adds links to highlighted source code
+    "sphinx.ext.intersphinx",  # Links to external documentation (e.g., Python standard library)
+    "sphinx.ext.autosummary",  # Generates stub files for autodoc automatically
 ]
 
 # --- Autodoc Customisation ---
