@@ -1,4 +1,5 @@
-from fbscatnet import FourierBesselWaveletBank
+from fbscatnet import FourierBesselWaveletBank  # type: ignore
+
 
 def test_bank_is_subscriptable_and_sized():
     bank = FourierBesselWaveletBank(size=32, m=2, k=2, sigma=0.1)
