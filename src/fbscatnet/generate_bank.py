@@ -151,7 +151,7 @@ class FourierBesselWaveletBank:
                     continue
 
                 Z = self.wavelet_bank[f"m_{m_val}_k_{k_val}_s{self.sigma}"]
-                z_max = np.max(np.abs(Z))
+                z_max: float = float(np.max(np.abs(Z)))
                 ax.imshow(
                     np.real(Z),
                     extent=[-self.freq_limit, self.freq_limit, -self.freq_limit, self.freq_limit],
