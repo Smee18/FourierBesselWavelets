@@ -71,7 +71,7 @@ class FourierBesselWaveletBank:
         self.mk_to_key = mk_to_key
         self.wavelet_bank = wavelet_bank
 
-    def __getitem__(self, key_or_indices) -> np.ndarray:
+    def __getitem__(self, key_or_indices: str | tuple) -> np.ndarray:
         """Retrieve a specific wavelet by its string key or (m_index, k_index) tuple."""
 
         # Case 1: Called with a string key
@@ -92,7 +92,7 @@ class FourierBesselWaveletBank:
 
         raise TypeError("Invalid index type. Use a string key or an (m, k) tuple.")
 
-    def __len__(self):
+    def __len__(self) -> int:
 
         return len(self.wavelet_bank)
 
@@ -106,7 +106,7 @@ class FourierBesselWaveletBank:
 
         return self.wavelet_bank.values()
 
-    def summary(self, verbose: bool = True):
+    def summary(self, verbose: bool = True) -> tuple[int, int, float]:
         """Print a summary of the wavelet bank parameters and size."""
         if verbose:
             print("Fourier-Bessel Wavelet bank summary:\n")

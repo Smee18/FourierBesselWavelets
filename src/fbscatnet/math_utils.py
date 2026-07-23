@@ -1,33 +1,53 @@
+from typing import cast
+
 import numpy as np
+import numpy.typing as npt
 import scipy.special
 
 ### BESSEL WRAPPERS VIA SCIPY ###
 
 
-def _first_kind_bessel(X, order: int):
-    """Vectorized Bessel function of the first kind supporting negative orders."""
+def _first_kind_bessel(X: npt.ArrayLike, order: int | np.integer) -> float | np.ndarray:
+    """Vectorized Bessel function supporting both scalar points and arrays."""
+    X_arr = np.asarray(X)
+    abs_order = int(abs(int(order)))
 
     if order < 0:
-        return (-1) ** abs(order) * scipy.special.jv(abs(order), X)
-    return scipy.special.jv(order, X)
+        val = (-1) ** abs_order * scipy.special.jv(abs_order, X_arr)
+    else:
+        val = scipy.special.jv(int(order), X_arr)
+
+    # If the input was a scalar, return a Python float; otherwise the array
+    if np.isscalar(X):
+        return float(np.asarray(val).item())
+    return cast(np.ndarray, np.asarray(val))
 
 
-def _first_kind_bessel_deriv(X, order: int):
-    """Vectorized derivative using recurrence relations."""
-    X_arr = np.atleast_1d(X).astype(float)
-    return 0.5 * (_first_kind_bessel(X_arr, order - 1) - _first_kind_bessel(X_arr, order + 1))
+def _first_kind_bessel_deriv(X: npt.ArrayLike, order: int | np.integer) -> float | np.ndarray:
+    """Derivative supporting both scalar points and arrays using recurrence relations."""
+    val = 0.5 * (_first_kind_bessel(X, order - 1) - _first_kind_bessel(X, order + 1))
+    return val
 
 
-def _first_modified_bessel(X, order: int):
-    """Vectorized modified Bessel function of the first kind."""
+def _first_modified_bessel(X: npt.ArrayLike, order: int | np.integer) -> float | np.ndarray:
+    """Modified Bessel function supporting both scalar points and arrays."""
 
-    return scipy.special.iv(order, X)
+    X_arr = np.asarray(X)
+    val = scipy.special.iv(order, X_arr)
+
+    # If the input was a scalar, return a Python float; otherwise the array
+    if np.isscalar(X):
+        return float(np.asarray(val).item())
+    return cast(np.ndarray, np.asarray(val))
 
 
 ### MULLER'S METHOD TO FIND EIGENVALUE ###
 
 
-def _mcmahon_seed(m, k):
+def _mcmahon_seed(m: int | np.integer, k: int | np.integer) -> float:
+    m = int(m)
+    k = int(k)
+    beta: float
     if m == 0:
         s = k
         nu = 1
@@ -41,7 +61,9 @@ def _mcmahon_seed(m, k):
         return beta - (4.0 * m**2 + 3.0) / (8.0 * beta)
 
 
-def _find_neumann_root_muller(m, k, thresh=1e-12, max_iter=200) -> float:
+def _find_neumann_root_muller(
+    m: int | np.integer, k: int | np.integer, thresh: float = 1e-12, max_iter: int = 200
+) -> float:
 
     x3 = 0.0
 
@@ -53,10 +75,12 @@ def _find_neumann_root_muller(m, k, thresh=1e-12, max_iter=200) -> float:
     x1 = x_seed
     x2 = x_seed + 0.15
 
-    def f(x):
+    def f(x: npt.ArrayLike) -> float | np.ndarray:
         return _first_kind_bessel_deriv(x, m)
 
-    d0, d1, d2 = f(x0), f(x1), f(x2)
+    d0: float = float(f(x0))
+    d1: float = float(f(x1))
+    d2: float = float(f(x2))
 
     for _ in range(max_iter):
         h1 = x1 - x0
@@ -76,21 +100,31 @@ def _find_neumann_root_muller(m, k, thresh=1e-12, max_iter=200) -> float:
         dx = -2 * c / (b + disc) if np.real(b) >= 0 else -2 * c / (b - disc)
 
         x3 = np.real(x2 + dx).item()
-        d3 = f(x3)
+        d3 = float(f(x3))
         if abs(d3) < thresh or abs(dx) < thresh:
             break
         x0, x1, x2 = x1, x2, x3
         d0, d1, d2 = d1, d2, d3
 
-    return x3
+    return float(x3)
 
 
 ### FOURIER WAVELET ###
 
 
-def _generate_fourier_bessel_wavelet(m, k, size=50, sigma=0.1, freq_limit=20, verbose=False):
+def _generate_fourier_bessel_wavelet(
+    m: int | np.integer,
+    k: int | np.integer,
+    size: int = 50,
+    sigma: float = 0.1,
+    freq_limit: int = 20,
+    verbose: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
     abs_m = np.abs(m)
     freq = np.linspace(-freq_limit, freq_limit, size)
+    Kx: np.ndarray
+    Ky: np.ndarray
     Kx, Ky = np.meshgrid(freq, freq, indexing="ij")
 
     Q = np.sqrt(Kx**2 + Ky**2)
@@ -131,8 +165,12 @@ def _generate_fourier_bessel_wavelet(m, k, size=50, sigma=0.1, freq_limit=20, ve
     return Kx, Ky, Z
 
 
-def _generate_fourier_low_pass_filter(size=50, sigma=0.1, freq_limit=20, verbose=False):
+def _generate_fourier_low_pass_filter(
+    size: int = 50, sigma: float = 0.1, freq_limit: int = 20, verbose: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
     freq = np.linspace(-freq_limit, freq_limit, size)
+    Kx: np.ndarray
+    Ky: np.ndarray
     Kx, Ky = np.meshgrid(freq, freq, indexing="ij")
     Q = np.sqrt(Kx**2 + Ky**2)
 

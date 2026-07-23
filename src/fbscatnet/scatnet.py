@@ -3,22 +3,27 @@ import os
 import numpy as np
 from tqdm import tqdm
 
+from .generate_bank import FourierBesselWaveletBank
+
 
 class FourierBesselScatNet:
-    def __init__(self, size, bank):
+    def __init__(self, size: int, bank: FourierBesselWaveletBank) -> None:
         self.size = size
         self.bank = bank
         self.num_filters = len(bank)
-        self.bank_keys = bank.get_keys()
+        self.bank_keys = list(bank.get_keys())
         self.low_pass = bank[0, 0]
 
-    def generate_embeddings(self, data, downsize, batch_size=32):
+    def generate_embeddings(
+        self, data: np.ndarray, downsize: int, batch_size: int = 32
+    ) -> np.ndarray:
 
         num_samples = data.shape[0]
         d_size = int(self.size / downsize)
 
         # Allocate memory for feature embedding
-        final_features = np.zeros(
+
+        final_features: np.ndarray = np.zeros(
             (num_samples, (d_size * d_size * self.num_filters)), dtype=np.float32
         )
 
@@ -34,8 +39,7 @@ class FourierBesselScatNet:
                 (end - start, d_size, d_size, self.num_filters), dtype=np.float32
             )
 
-            self.bank_keys = list(self.bank.get_keys())
-            for i, key in enumerate(self.bank_keys[1:]):
+            for i, key in enumerate(self.bank_keys):
                 wavelet_fft = self.bank[key]  # Extract wavelet (centered in frequency domain)
                 filtered_fft = batch_fft * wavelet_fft  # Convolution in frequency domain
 
@@ -54,7 +58,7 @@ class FourierBesselScatNet:
 
         return final_features
 
-    def save_embeddings(self):
+    def save_embeddings(self) -> None:
 
         m, k, sigma = self.bank.summary(verbose=False)
         os.makedirs("features", exist_ok=True)
