@@ -23,7 +23,7 @@ autodoc_member_order = "bysource"  # Options: 'alphabetical', 'bysource', 'group
 # Default flags used by all autodoc directives (e.g., show member type hints)
 autodoc_typehints = "description"  # Options: 'signature', 'description', 'none', 'both'
 
-# Automatically mock imports that might not be installed in the readthedocs/build environment (e.g., C extensions or heavy libraries)
+# Automatically mock imports that might not be installed in the readthedocs/build environment
 autodoc_mock_imports = []
 
 # --- Intersphinx Mapping ---
