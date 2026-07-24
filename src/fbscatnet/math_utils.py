@@ -157,8 +157,10 @@ def _generate_fourier_bessel_wavelet(
         post_norm_energy = np.sum(np.abs(Z) ** 2) * (dx * dx)
 
         print(
-            f"Wavelet  (m={m}, k={k}) | Mean (~0): {mean_val:.2e} | \
-              L2: {post_norm_energy:.4f} Eigenvalue: {eigenvalue:.4f}"
+            f"Wavelet (m={m}, k={k}) | "
+            f"Mean (~0): {mean_val:.2e} | "
+            f"L2: {post_norm_energy:.4f} "
+            f"Eigenvalue: {eigenvalue:.4f}"
         )
     # -------------------------
 
@@ -175,7 +177,7 @@ def _generate_fourier_low_pass_filter(
     Q = np.sqrt(Kx**2 + Ky**2)
 
     sigma2 = sigma**2
-    Z = np.exp(-2 * (np.pi**2) * sigma2 * (Q**2))
+    Z = np.exp(-(sigma2) * (Q**2) / 2)
 
     # --- DIAGNOSTIC PRINTS ---
     if verbose:

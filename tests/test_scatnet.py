@@ -5,7 +5,7 @@ from fbscatnet import FourierBesselScatNet, FourierBesselWaveletBank  # type: ig
 
 def test_embeddings_use_every_filter_channel():
     bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    net = FourierBesselScatNet(size=16, bank=bank)
+    net = FourierBesselScatNet(bank=bank)
     data = np.random.rand(2, 16, 16)
     features = net.generate_embeddings(data, downsize=2)
     reshaped = features.reshape(2, 8, 8, -1)

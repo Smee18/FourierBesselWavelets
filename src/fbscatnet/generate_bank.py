@@ -15,13 +15,24 @@ class FourierBesselWaveletBank:
 
     Attributes:
         size (int): Image size.
-        m (int): Maximum order .
+        m (int): Maximum order.
         k (int): Maximum angular index.
         sigma (float): Scale parameter for the wavelets.
+        verbose (bool): Display wavelet diagnostic prints.
+        wavelet_bank (dict[str, np.ndarray]): Stored dictionary of wavelets.
+        mk_to_key (dict[tuple, str]): Mapping from (m, k) tuples to string keys.
     """
 
     def __init__(self, size: int, m: int, k: int, sigma: float, verbose: bool = False) -> None:
+        """Initialise the FourierBesselWaveletBank.
 
+        Args:
+            size (int): Image size.
+            m (int): Maximum order.
+            k (int): Maximum angular index.
+            sigma (float): Scale parameter for the wavelets.
+            verbose (bool, optional): Display wavelet diagnostic prints. Defaults to False.
+        """
         self.size = size
         self.m = m
         self.k = k
@@ -72,15 +83,24 @@ class FourierBesselWaveletBank:
         self.wavelet_bank = wavelet_bank
 
     def __getitem__(self, key_or_indices: str | tuple) -> np.ndarray:
-        """Retrieve a specific wavelet by its string key or (m_index, k_index) tuple."""
+        """Retrieve a specific wavelet by its string key or (m_index, k_index) tuple.
 
-        # Case 1: Called with a string key
+        Args:
+            key_or_indices (str | tuple): Index to retrieve either as string "m_k_sigma"
+                or by an (m, k) tuple.
+
+        Returns:
+            np.ndarray: The requested wavelet array.
+
+        Raises:
+            KeyError: If the key or (m, k) combination does not exist.
+            TypeError: If an invalid index type is provided.
+        """
         if isinstance(key_or_indices, str):
             if key_or_indices not in self.wavelet_bank:
                 raise KeyError(f"Wavelet key '{key_or_indices}' not found.")
             return self.wavelet_bank[key_or_indices]
 
-        # Case 2: Called with a comma separated pair using a tuple
         elif isinstance(key_or_indices, tuple) and len(key_or_indices) == 2:
             m_index, k_index = key_or_indices
 
@@ -93,23 +113,40 @@ class FourierBesselWaveletBank:
         raise TypeError("Invalid index type. Use a string key or an (m, k) tuple.")
 
     def __len__(self) -> int:
+        """Retrieve the number of wavelets in the bank.
 
+        Returns:
+            int: Total count of wavelets.
+        """
         return len(self.wavelet_bank)
 
     def get_keys(self) -> KeysView[str]:
-        """Return the dictionary keys representing individual wavelets."""
+        """Return the dictionary keys representing individual wavelets.
 
+        Returns:
+            KeysView[str]: View of the string keys.
+        """
         return self.wavelet_bank.keys()
 
     def get_values(self) -> ValuesView[np.ndarray]:
-        """Return the collection of wavelet arrays."""
+        """Return the collection of wavelet arrays.
 
+        Returns:
+            ValuesView[np.ndarray]: View of the wavelet numpy arrays.
+        """
         return self.wavelet_bank.values()
 
     def summary(self, verbose: bool = True) -> tuple[int, int, float]:
-        """Print a summary of the wavelet bank parameters and size."""
+        """Print an optional summary of the wavelet bank parameters and size.
+
+        Args:
+            verbose (bool, optional): Whether to print summary details. Defaults to True.
+
+        Returns:
+            tuple[int, int, float]: A tuple containing (m, k, sigma).
+        """
         if verbose:
-            print("Fourier-Bessel Wavelet bank summary:\n")
+            print("\nFourier-Bessel Wavelet bank summary:\n")
             print(f"Parameters: m = {self.m}, k = {self.k}, sigma = {self.sigma}\n")
             print(f"Total wavelets: {len(self.wavelet_bank)}")
             print(f"Frequency limit: {self.freq_limit:.2f}")
