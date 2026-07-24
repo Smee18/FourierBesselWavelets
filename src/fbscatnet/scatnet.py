@@ -203,7 +203,6 @@ class FourierBesselScatNet:
 
         print(f"Embedding successfully saved to '{save_path}'")
 
-
     def visualise_maps(self, image: np.ndarray, downsize: int) -> None:
         """
         Visualises Order 0 and Order 1 scattering maps.
@@ -233,7 +232,9 @@ class FourierBesselScatNet:
             np.fft.ifft2(np.fft.ifftshift(low_pass_coeffs, axes=(-2, -1)), axes=(-2, -1))
         )[0]
 
-        low_pass_down = low_pass_spatial.reshape(d_size, downsize, d_size, downsize).mean(axis=(1, 3))
+        low_pass_down = low_pass_spatial.reshape(d_size, downsize, d_size, downsize).mean(
+            axis=(1, 3)
+        )
 
         maps["Order 0 (Low Pass)"] = low_pass_down
 
@@ -247,10 +248,14 @@ class FourierBesselScatNet:
 
             # Standard scattering cascade
             filtered_fft = batch_fft * wavelet_fft
-            spatial_complex = np.fft.ifft2(np.fft.ifftshift(filtered_fft, axes=(-2, -1)), axes=(-2, -1))
+            spatial_complex = np.fft.ifft2(
+                np.fft.ifftshift(filtered_fft, axes=(-2, -1)), axes=(-2, -1)
+            )
             modulus_spatial = np.abs(spatial_complex)
 
-            modulus_fft = np.fft.fftshift(np.fft.fft2(modulus_spatial, axes=(-2, -1)), axes=(-2, -1))
+            modulus_fft = np.fft.fftshift(
+                np.fft.fft2(modulus_spatial, axes=(-2, -1)), axes=(-2, -1)
+            )
             filtered_low_pass = modulus_fft * self.low_pass
 
             smoothed_spatial = np.real(
