@@ -40,8 +40,3 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
-[[tool.mypy.overrides]]
-module = "numpy.*"
-ignore_errors = true
-ignore_missing_imports = true
-follow_imports = "skip"
