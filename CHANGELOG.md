@@ -2,8 +2,7 @@
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-07-23
+## [0.2.0] - 2026-07-24
 ### Added
-- Initial FourierBesselWaveletBank with Fourier-Bessel wavelet generation.
-- Single-layer FourierBesselScatNet for scattering-transform embeddings.
-- Full test suite, type checking, and linting configuration.
+- Dual order Scattering Network
+- Visualisation method for first order maps
