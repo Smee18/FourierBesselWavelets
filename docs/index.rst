@@ -1,5 +1,5 @@
 Welcome to fbscatnet's Documentation!
-===================================
+=====================================
 
 .. toctree::
    :maxdepth: 2
