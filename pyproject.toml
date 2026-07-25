@@ -46,7 +46,8 @@ disallow_untyped_defs = true
 [[tool.mypy.overrides]]
 module = [
     "cupy.*",
-    "joblib.*"
+    "joblib.*",
+    "rainbow_tqdm.*"
 ]
 ignore_missing_imports = true
 
