@@ -3,11 +3,14 @@ from collections.abc import KeysView, ValuesView
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .logger_config import setup_logger
 from .math_utils import (
     _find_neumann_root_muller,
     _generate_fourier_bessel_wavelet,
     _generate_fourier_low_pass_filter,
 )
+
+logger = setup_logger(__name__)
 
 
 class FourierBesselWaveletBank:
@@ -23,15 +26,21 @@ class FourierBesselWaveletBank:
         mk_to_key (dict[tuple, str]): Mapping from (m, k) tuples to string keys.
     """
 
-    def __init__(self, size: int, m: int, k: int, sigma: float, verbose: bool = False) -> None:
+    def __init__(
+        self, size: int, m: int, k: int, sigma: float = 0.3, verbose: bool = False
+    ) -> None:
         """Initialise the FourierBesselWaveletBank.
 
         Args:
             size (int): Image size.
             m (int): Maximum order.
             k (int): Maximum angular index.
-            sigma (float): Scale parameter for the wavelets.
+            sigma (float, optional): Scale parameter for the wavelets.
             verbose (bool, optional): Display wavelet diagnostic prints. Defaults to False.
+
+        Raises:
+            ValueError: If angular order k is greater than m.
+            ValueError: If input parameters are negative
         """
         self.size = size
         self.m = m
@@ -42,7 +51,11 @@ class FourierBesselWaveletBank:
         self.k_values = np.arange(0, k)
         self.verbose = verbose
 
-        assert self.m <= self.k, "m <= k condition is not respected"
+        if self.m < self.k:
+            raise ValueError("m <= k condition is not respected")
+
+        if self.m < 0 or self.k < 0 or self.sigma < 0 or self.size <= 0:
+            raise ValueError("Cannot accept negative parameters")
 
         self.lambda_max = _find_neumann_root_muller(
             0, int(self.k_values.max()) if len(self.k_values) > 0 else 0
@@ -146,11 +159,12 @@ class FourierBesselWaveletBank:
             tuple[int, int, float]: A tuple containing (m, k, sigma).
         """
         if verbose:
-            print("\nFourier-Bessel Wavelet bank summary:\n")
-            print(f"Parameters: m = {self.m}, k = {self.k}, sigma = {self.sigma}\n")
-            print(f"Total wavelets: {len(self.wavelet_bank)}")
-            print(f"Frequency limit: {self.freq_limit:.2f}")
-            print("Key naming structure: {m_{m_val}_k_{k_val}_s{sigma}}")
+            print()
+            logger.info("Fourier-Bessel Wavelet bank summary:")
+            logger.info("Parameters: m = %d, k = %d, sigma = %.2f", self.m, self.k, self.sigma)
+            logger.info("Total wavelets: %d", len(self.wavelet_bank))
+            logger.info("Frequency limit: %.2f", self.freq_limit)
+            logger.info("Key naming structure: {m_{m_val}_k_{k_val}_s{sigma}}")
 
         return self.m, self.k, self.sigma
 
