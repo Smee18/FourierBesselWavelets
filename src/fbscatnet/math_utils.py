@@ -4,6 +4,10 @@ import numpy as np
 import numpy.typing as npt
 import scipy.special
 
+from .logger_config import setup_logger
+
+logger = setup_logger(__name__)
+
 ### BESSEL WRAPPERS VIA SCIPY ###
 
 
@@ -82,6 +86,8 @@ def _find_neumann_root_muller(
     d1: float = float(f(x1))
     d2: float = float(f(x2))
 
+    iter = 0
+
     for _ in range(max_iter):
         h1 = x1 - x0
         h2 = x2 - x1
@@ -105,7 +111,10 @@ def _find_neumann_root_muller(
             break
         x0, x1, x2 = x1, x2, x3
         d0, d1, d2 = d1, d2, d3
+        iter += 1
 
+    if iter == max_iter:
+        logger.warning("Root finder did not converge. Consider increasing max_iter")
     return float(x3)
 
 
@@ -156,7 +165,7 @@ def _generate_fourier_bessel_wavelet(
         mean_val = np.abs(np.mean(Z))
         post_norm_energy = np.sum(np.abs(Z) ** 2) * (dx * dx)
 
-        print(
+        logger.info(
             f"Wavelet (m={m}, k={k}) | "
             f"Mean (~0): {mean_val:.2e} | "
             f"L2: {post_norm_energy:.4f} "
@@ -185,7 +194,9 @@ def _generate_fourier_low_pass_filter(
         mean_val = np.abs(np.mean(Z))
         post_norm_energy = np.sum(np.abs(Z)) * (dx * dx)
 
-        print(f"Low pass  (m=0, k=0) | Mean (~0): {mean_val:.2e} | L1: {post_norm_energy:.4f}")
+        logger.info(
+            f"Low pass  (m=0, k=0) | Mean (~0): {mean_val:.2e} | L1: {post_norm_energy:.4f}"
+        )
     # -------------------------
 
     return Q, Z
