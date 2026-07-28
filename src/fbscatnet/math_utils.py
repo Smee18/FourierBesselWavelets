@@ -218,7 +218,9 @@ def _generate_fourier_low_pass_filter(
             post_norm_energy = np.max(np.abs(Z))
 
         logger.info(
-            f"Low pass  (m=0, k=0) | Mean (>0): {mean_val:.2e} | {norm.upper()}: {post_norm_energy:.4f}"
+            f"Low pass  (m=0, k=0) | "
+            f"Mean (>0): {mean_val:.2e} | "
+            f"{norm.upper()}: {post_norm_energy:.4f}"
         )
     # -------------------------
 
