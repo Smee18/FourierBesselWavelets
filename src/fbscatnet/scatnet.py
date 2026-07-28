@@ -1,10 +1,18 @@
 import os
 import re
 import warnings
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.fft as spfft
+from joblib import Parallel, delayed
+from rainbow_tqdm import tqdm
+
+from .generate_bank import FourierBesselWaveletBank
+from .logger_config import setup_logger
+
+logger = setup_logger(__name__)
 
 try:
     with warnings.catch_warnings():
@@ -13,18 +21,12 @@ try:
 
     try:
         HAS_CUPY = cp.cuda.runtime.getDeviceCount() > 0
-    except Exception:
+    except Exception as exc:
+        logger.debug("CuPy is installed but no usable GPU was detected: %s", exc)
         HAS_CUPY = False
 except ImportError:
     cp = None
     HAS_CUPY = False
-
-from typing import Any
-
-from joblib import Parallel, delayed
-from rainbow_tqdm import tqdm
-
-from .generate_bank import FourierBesselWaveletBank
 
 
 def _extract_k(key_str: str) -> int:
@@ -53,7 +55,10 @@ class FourierBesselScatNet:
             backend (str): Device to operate on
 
         Raises:
-            ImportError: If CuPy requested but no GPU
+            ImportError: If CuPy requested but no GPU.
+            ValueError: If the bank contains no band-pass wavelets (i.e. only
+                the (0, 0) low-pass filter), since the scattering cascade has
+                nothing to filter with in that case.
         """
         self.backend = backend.lower()
         if self.backend == "gpu" and not HAS_CUPY:
@@ -61,6 +66,12 @@ class FourierBesselScatNet:
                 "GPU backend was requested, but 'cupy' is not"
                 ""
                 "installed or no compatible GPU was found."
+            )
+        if len(bank) <= 1:
+            raise ValueError(
+                "The wavelet bank contains no band-pass wavelets (only the "
+                "low-pass filter). FourierBesselScatNet needs at least one "
+                "wavelet - try constructing the bank with m > 1 and/or k > 1."
             )
         self.xp: Any = cp if self.backend == "gpu" else np
         self.size = bank[0, 0].shape[0]
@@ -99,6 +110,70 @@ class FourierBesselScatNet:
             for key1, children in self._order2_children.items()
         }
 
+    def _fft2(self, x: Any, xp: Any) -> Any:
+        """Backend-aware 2D FFT (uses scipy on CPU for multi-threaded speed, cupy on GPU)."""
+        if self.backend == "gpu":
+            return xp.fft.fft2(x, axes=(-2, -1))
+        return spfft.fft2(x, axes=(-2, -1), workers=-1)
+
+    def _ifft2(self, x: Any, xp: Any) -> Any:
+        """Backend-aware inverse 2D FFT, mirroring `_fft2`."""
+        if self.backend == "gpu":
+            return xp.fft.ifft2(x, axes=(-2, -1))
+        return spfft.ifft2(x, axes=(-2, -1), workers=-1)
+
+    def _filter_and_modulus(self, xp: Any, freq_signal: Any, filters: Any) -> Any:
+        """Apply wavelet filter(s) in the frequency domain and take the spatial modulus.
+
+        Args:
+            xp: The array module to use (numpy or cupy) for this batch.
+            freq_signal: Input already in fftshifted frequency domain,
+                broadcastable against `filters`.
+            filters: One or a stack of frequency-domain filters to apply.
+
+        Returns:
+            The fftshifted frequency-domain modulus.
+        """
+        filtered_fft = freq_signal * filters
+        shifted_freq = xp.fft.ifftshift(filtered_fft, axes=(-2, -1))
+        spatial_complex = self._ifft2(shifted_freq, xp)
+        modulus_spatial = xp.abs(spatial_complex).astype(xp.float32)
+        return xp.fft.fftshift(self._fft2(modulus_spatial, xp), axes=(-2, -1)).astype(xp.complex64)
+
+    def _smooth_and_pool(
+        self,
+        xp: Any,
+        modulus_fft: Any,
+        low_pass_c: Any,
+        batch_size: int,
+        n_maps: int,
+        d_size: int,
+        downsize: int,
+    ) -> Any:
+        """Low-pass smooth a modulus map and block-mean-pool it down to `d_size`.
+
+        Args:
+            xp: The array module to use (numpy or cupy) for this batch.
+            modulus_fft: Output of `_filter_and_modulus`, shape (batch, n_maps, H, W).
+            low_pass_c: Broadcastable complex low-pass filter.
+            batch_size: Number of samples in this batch.
+            n_maps: Number of filter channels being pooled.
+            d_size: Output spatial size after downsampling (H // downsize).
+            downsize: Block-mean pooling factor.
+
+        Returns:
+            Real-valued pooled features of shape (batch_size, d_size, d_size, n_maps).
+        """
+        filtered_low_pass = modulus_fft * low_pass_c
+        smoothed_shifted = xp.fft.ifftshift(filtered_low_pass, axes=(-2, -1))
+        smoothed_spatial = self._ifft2(smoothed_shifted, xp)
+        return (
+            xp.real(smoothed_spatial)
+            .reshape(batch_size, n_maps, d_size, downsize, d_size, downsize)
+            .mean(axis=(3, 5))
+            .transpose(0, 2, 3, 1)
+        )
+
     def generate_embeddings(
         self,
         data: np.ndarray,
@@ -128,7 +203,6 @@ class FourierBesselScatNet:
         num_order_1_maps = self.num_order_1_maps
         num_order_2_maps = self.num_order_2_maps
 
-        # Helper function to process a single batch
         def _process_batch(batch_data: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
             b_xp: Any = cp if self.backend == "gpu" else np
             b_data = (
@@ -138,31 +212,16 @@ class FourierBesselScatNet:
             )
             curr_batch_size = b_data.shape[0]
 
-            if self.backend == "gpu":
-                batch_fft = b_xp.fft.fftshift(
-                    b_xp.fft.fft2(b_data, axes=(-2, -1)), axes=(-2, -1)
-                ).astype(b_xp.complex64)
-            else:
-                batch_fft = spfft.fftshift(
-                    spfft.fft2(b_data, axes=(-2, -1), workers=-1), axes=(-2, -1)
-                ).astype(b_xp.complex64)
-
-            def _fft2(x: Any) -> Any:
-                if self.backend == "gpu":
-                    return b_xp.fft.fft2(x, axes=(-2, -1))
-                return spfft.fft2(x, axes=(-2, -1), workers=-1)
-
-            def _ifft2(x: Any) -> Any:
-                if self.backend == "gpu":
-                    return b_xp.fft.ifft2(x, axes=(-2, -1))
-                return spfft.ifft2(x, axes=(-2, -1), workers=-1)
+            batch_fft = b_xp.fft.fftshift(self._fft2(b_data, b_xp), axes=(-2, -1)).astype(
+                b_xp.complex64
+            )
 
             low_pass_c = self._low_pass_c
 
-            # ORDER 0
-            low_pass_coeffs = batch_fft * low_pass_c
-            low_pass_shifted = b_xp.fft.ifftshift(low_pass_coeffs, axes=(-2, -1))
-            low_pass_spatial = _ifft2(low_pass_shifted)
+            # ORDER 0: plain low-pass response, no modulus non-linearity.
+            low_pass_spatial = self._ifft2(
+                b_xp.fft.ifftshift(batch_fft * low_pass_c, axes=(-2, -1)), b_xp
+            )
             low_pass_down = (
                 b_xp.real(low_pass_spatial)
                 .reshape(-1, d_size, downsize, d_size, downsize)
@@ -170,29 +229,23 @@ class FourierBesselScatNet:
             )
             order_0_res = low_pass_down.reshape(curr_batch_size, -1)
 
-            # ORDER 1
+            # ORDER 1: filter with every wavelet, take modulus, smooth, pool.
             bank_1_stack = self._filters_1_stack  # (num_filters, H, W)
-
-            filtered_fft_1 = batch_fft[:, None, :, :] * bank_1_stack[None, :, :, :]
-            shifted_freq_1 = b_xp.fft.ifftshift(filtered_fft_1, axes=(-2, -1))
-            spatial_complex_1 = _ifft2(shifted_freq_1)
-            modulus_spatial_1 = b_xp.abs(spatial_complex_1).astype(b_xp.float32)
-
-            modulus_fft_1 = b_xp.fft.fftshift(_fft2(modulus_spatial_1), axes=(-2, -1)).astype(
-                b_xp.complex64
+            modulus_fft_1 = self._filter_and_modulus(
+                b_xp, batch_fft[:, None, :, :], bank_1_stack[None, :, :, :]
             )
-            filtered_low_pass_1 = modulus_fft_1 * low_pass_c[None, None, :, :]
-            smoothed_shifted_1 = b_xp.fft.ifftshift(filtered_low_pass_1, axes=(-2, -1))
-            smoothed_spatial_1 = _ifft2(smoothed_shifted_1)
-
-            batch_pooled_order_1 = (
-                b_xp.real(smoothed_spatial_1)
-                .reshape(curr_batch_size, num_order_1_maps, d_size, downsize, d_size, downsize)
-                .mean(axis=(3, 5))
-                .transpose(0, 2, 3, 1)
+            batch_pooled_order_1 = self._smooth_and_pool(
+                b_xp,
+                modulus_fft_1,
+                low_pass_c[None, None, :, :],
+                curr_batch_size,
+                num_order_1_maps,
+                d_size,
+                downsize,
             )
 
-            # ORDER 2
+            # ORDER 2: for each order-1 channel, filter again with only the
+            # wavelets of strictly lower angular index k
             batch_pooled_order_2 = b_xp.zeros(
                 (curr_batch_size, d_size, d_size, num_order_2_maps), dtype=b_xp.float32
             )
@@ -206,24 +259,18 @@ class FourierBesselScatNet:
                 filters_2_stack = self._filters_2_stack_by_key1[key1]  # (n_children, H, W)
                 mod_fft_1_single = modulus_fft_1[:, i]  # (batch, H, W)
 
-                filtered_fft_2 = mod_fft_1_single[:, None, :, :] * filters_2_stack[None, :, :, :]
-                shifted_freq_2 = b_xp.fft.ifftshift(filtered_fft_2, axes=(-2, -1))
-                spatial_complex_2 = _ifft2(shifted_freq_2)
-                modulus_spatial_2 = b_xp.abs(spatial_complex_2).astype(b_xp.float32)
-
-                modulus_fft_2 = b_xp.fft.fftshift(_fft2(modulus_spatial_2), axes=(-2, -1)).astype(
-                    b_xp.complex64
+                modulus_fft_2 = self._filter_and_modulus(
+                    b_xp, mod_fft_1_single[:, None, :, :], filters_2_stack[None, :, :, :]
                 )
-                filtered_low_pass_2 = modulus_fft_2 * low_pass_c[None, None, :, :]
-                smoothed_shifted_2 = b_xp.fft.ifftshift(filtered_low_pass_2, axes=(-2, -1))
-                smoothed_spatial_2 = _ifft2(smoothed_shifted_2)
-
                 n_children = len(children)
-                down = (
-                    b_xp.real(smoothed_spatial_2)
-                    .reshape(curr_batch_size, n_children, d_size, downsize, d_size, downsize)
-                    .mean(axis=(3, 5))
-                    .transpose(0, 2, 3, 1)
+                down = self._smooth_and_pool(
+                    b_xp,
+                    modulus_fft_2,
+                    low_pass_c[None, None, :, :],
+                    curr_batch_size,
+                    n_children,
+                    d_size,
+                    downsize,
                 )
                 batch_pooled_order_2[..., order_2_idx : order_2_idx + n_children] = down
                 order_2_idx += n_children
@@ -309,7 +356,7 @@ class FourierBesselScatNet:
         features = self.final_features.get() if self.backend == "gpu" else self.final_features
         np.savez_compressed(save_path, embedding=features)
 
-        print(f"Embedding successfully saved to '{save_path}'")
+        logger.info("Embedding successfully saved to '%s'", save_path)
 
     def visualise_maps(self, image: np.ndarray, downsize: int) -> None:
         """
@@ -332,9 +379,7 @@ class FourierBesselScatNet:
         # Dictionaries to hold maps for plotting
         maps = {}
 
-        # ==============================
         # ORDER 0
-        # ==============================
         low_pass_coeffs = batch_fft * self.low_pass
         low_pass_spatial = np.real(
             np.fft.ifft2(np.fft.ifftshift(low_pass_coeffs, axes=(-2, -1)), axes=(-2, -1))
@@ -346,9 +391,7 @@ class FourierBesselScatNet:
 
         maps["Order 0 (Low Pass)"] = low_pass_down
 
-        # ==============================
         # ORDER 1
-        # ==============================
         order_1_keys = self.bank_keys[1:]
 
         for key1 in order_1_keys:
@@ -377,12 +420,10 @@ class FourierBesselScatNet:
 
             maps[f"Order 1 ({key1})"] = smoothed_down
 
-        # ==============================
         # DYNAMIC GRID CALCULATION
-        # ==============================
         num_maps = len(maps)
 
-        # 1. Find the best exact integer factors
+        # Find the best exact integer factors
         best_factor = 1
         for i in range(1, int(np.sqrt(num_maps)) + 1):
             if num_maps % i == 0:
@@ -391,16 +432,14 @@ class FourierBesselScatNet:
         rows = best_factor
         cols = num_maps // best_factor
 
-        # 2. Fallback for prime numbers or extremely stretched grids
+        # Fallback for prime numbers or extremely stretched grids
         # If the aspect ratio is wider than 3:1, use a square-ish grid instead.
         if cols / rows > 3:
             cols = int(np.ceil(np.sqrt(num_maps)))
             rows = int(np.ceil(num_maps / cols))
 
-        # ==============================
         # PLOTTING
-        # ==============================
-        fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 3))
+        _, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 3))
 
         # Flatten the axes array so we can iterate through it easily
         if isinstance(axes, np.ndarray):
