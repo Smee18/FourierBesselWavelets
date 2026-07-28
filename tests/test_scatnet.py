@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-
 from fbscatnet import FourierBesselScatNet, FourierBesselWaveletBank  # type: ignore
 
 

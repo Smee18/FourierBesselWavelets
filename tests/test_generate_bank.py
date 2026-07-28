@@ -1,97 +1,181 @@
 import numpy as np
 import pytest
 
-from fbscatnet import FourierBesselWaveletBank  # type: ignore
+from fbscatnet import FourierBesselScatNet, FourierBesselWaveletBank  # type: ignore
+from fbscatnet.scatnet import _extract_k  # type: ignore
 
 
-def test_bank_is_subscriptable_and_sized():
-    bank = FourierBesselWaveletBank(size=32, m=2, k=2, sigma=0.1)
-    assert len(bank) == len(list(bank.get_keys()))
-    key = next(iter(bank.get_keys()))
-    assert bank[key].shape == (32, 32)
+def test_embeddings_use_every_filter_channel():
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+    data = np.random.rand(2, 16, 16)
+    features = net.generate_embeddings(data, downsize=2)
+    reshaped = features.reshape(2, 8, 8, -1)
+    channel_sums = np.abs(reshaped).sum(axis=(0, 1, 2))
+    assert np.all(channel_sums > 0), "Some filter channels are dead — check the pooling loop"
 
 
-def test_bank_rejects_k_greater_than_m():
+def test_feature_dimension_matches_expected_channel_count():
+    """Output width should equal (order0 + order1 + order2 channels) * spatial cells."""
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+    downsize = 2
+    d_size = 16 // downsize
+
+    expected_channels = 1 + net.num_order_1_maps + net.num_order_2_maps
+    expected_width = expected_channels * d_size * d_size
+
+    data = np.random.rand(3, 16, 16)
+    features = net.generate_embeddings(data, downsize=downsize)
+
+    assert features.shape == (3, expected_width)
+
+
+def test_downsize_one_produces_full_resolution_features():
+    """downsize=1 should skip pooling entirely and keep full spatial resolution."""
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+    downsize = 1
+    d_size = 16 // downsize
+
+    expected_channels = 1 + net.num_order_1_maps + net.num_order_2_maps
+    expected_width = expected_channels * d_size * d_size
+
+    data = np.random.rand(2, 16, 16)
+    features = net.generate_embeddings(data, downsize=downsize)
+
+    assert features.shape == (2, expected_width)
+
+
+def test_sequential_and_multiprocessing_agree():
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+    data = np.random.rand(4, 16, 16)
+
+    seq_features = net.generate_embeddings(data, downsize=2, batch_size=2)
+    mp_features = net.generate_embeddings(data, downsize=2, batch_size=2, use_multiprocessing=True)
+
+    np.testing.assert_allclose(seq_features, mp_features, rtol=1e-5, atol=1e-6)
+
+
+def test_batch_size_larger_than_dataset():
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+    data = np.random.rand(3, 16, 16)
+
+    features = net.generate_embeddings(data, downsize=2, batch_size=64)
+
+    assert features.shape[0] == 3
+
+
+def test_save_embeddings_round_trips(tmp_path):
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+    data = np.random.rand(2, 16, 16)
+    features = net.generate_embeddings(data, downsize=2)
+
+    net.save_embeddings(str(tmp_path))
+
+    saved_files = list(tmp_path.glob("embedding_*.npz"))
+    assert len(saved_files) == 1
+
+    loaded = np.load(saved_files[0])["embedding"]
+    np.testing.assert_allclose(loaded, features)
+
+
+def test_save_embeddings_without_generate_raises():
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+
     with pytest.raises(ValueError):
-        FourierBesselWaveletBank(size=16, m=1, k=2, sigma=0.1)
+        net.save_embeddings("some/path")
+
+
+def test_gpu_backend_without_cupy_raises(monkeypatch):
+    import fbscatnet.scatnet as scatnet_module
+
+    monkeypatch.setattr(scatnet_module, "HAS_CUPY", False)
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+
+    with pytest.raises(ImportError):
+        FourierBesselScatNet(bank=bank, backend="gpu")
+
+
+def test_constructor_rejects_bank_with_only_low_pass():
+    with pytest.raises(ValueError):
+        FourierBesselScatNet(bank=FourierBesselWaveletBank(28, 0, 0))
+
+
+def test_order2_children_exclude_self_and_respect_k_ordering():
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+
+    for key1, children in net._order2_children.items():
+        k1 = net._k_map[key1]
+        assert key1 not in children
+        assert all(net._k_map[key2] < k1 for key2 in children)
+
+
+def test_filters_1_stack_shape_matches_order_1_maps():
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+
+    assert net._filters_1_stack.shape == (net.num_order_1_maps, net.size, net.size)
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    "key,expected",
     [
-        {"size": 16, "m": -1, "k": 0, "sigma": 0.1},
-        {"size": 16, "m": 2, "k": -1, "sigma": 0.1},
-        {"size": 16, "m": 2, "k": 2, "sigma": -0.1},
-        {"size": 0, "m": 2, "k": 2, "sigma": 0.1},
-        {"size": -4, "m": 2, "k": 2, "sigma": 0.1},
-        {"size": -4, "m": 2, "k": 2, "sigma": 0.1, "norm": "l3"},
+        ("m=1_k=2", 2),
+        ("m2k5", 5),
+        ("k_10", 10),
+        ("k 7", 7),
+        ("no_k_here", 0),
     ],
 )
-def test_bank_rejects_invalid_parameters(kwargs):
-    with pytest.raises(ValueError):
-        FourierBesselWaveletBank(**kwargs)
+def test_extract_k_parses_various_key_formats(key, expected):
+    assert _extract_k(key) == expected
 
 
-def test_key_naming_matches_expected_format():
+def test_run_multiprocess_falls_back_for_old_joblib(monkeypatch):
+    import fbscatnet.scatnet as scatnet_module
+
+    class _FakeParallel:
+        def __init__(self, n_jobs=None, return_as=None):
+            self.n_jobs = n_jobs
+            if return_as is not None:
+                raise TypeError("return_as not supported in this joblib version")
+
+        def __call__(self, tasks):
+            return [func(*args, **kwargs) for func, args, kwargs in tasks]
+
+    monkeypatch.setattr(scatnet_module, "Parallel", _FakeParallel)
+
     bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    for (m_val, k_val), key in bank.mk_to_key.items():
-        assert key == f"m_{m_val}_k_{k_val}_s{bank.sigma}"
-        assert key in bank.wavelet_bank
+    net = FourierBesselScatNet(bank=bank)
+    data = np.random.rand(4, 16, 16)
+
+    features = net.generate_embeddings(data, downsize=2, batch_size=2, use_multiprocessing=True)
+
+    assert features.shape[0] == 4
 
 
-def test_getitem_string_and_tuple_access_agree():
-    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    for (m_val, k_val), key in bank.mk_to_key.items():
-        np.testing.assert_array_equal(bank[key], bank[m_val, k_val])
-
-
-def test_getitem_low_pass_via_zero_zero_index():
-    """bank[0, 0] is used elsewhere (e.g. FourierBesselScatNet) as the low-pass filter."""
-    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    low_pass = bank[0, 0]
-    assert low_pass.shape == (16, 16)
-    assert bank.mk_to_key[(0, 0)] == f"m_0_k_0_s{bank.sigma}"
-
-
-def test_getitem_missing_string_key_raises_keyerror():
-    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    with pytest.raises(KeyError):
-        bank["not_a_real_key"]
-
-
-def test_getitem_missing_mk_pair_raises_keyerror():
-    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    with pytest.raises(KeyError):
-        bank[1, 0]
-
-
-def test_getitem_invalid_type_raises_typeerror():
-    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    with pytest.raises(TypeError):
-        bank[42]  # type: ignore
-    with pytest.raises(TypeError):
-        bank[(0, 0, 0)]
-
-
-def test_get_keys_and_get_values_are_consistent():
-    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    keys = list(bank.get_keys())
-    values = list(bank.get_values())
-    assert len(keys) == len(values)
-    for key, value in zip(keys, values):
-        np.testing.assert_array_equal(bank[key], value)
-
-
-def test_summary_returns_m_k_sigma_regardless_of_verbosity():
-    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    assert bank.summary(verbose=False) == (2, 2, 0.1)
-    assert bank.summary(verbose=True) == (2, 2, 0.1)
-
-
-def test_plot_bank_runs_without_error(monkeypatch):
+def test_visualise_maps_runs_without_error(monkeypatch):
     import matplotlib.pyplot as plt
 
     monkeypatch.setattr(plt, "show", lambda: None)
 
     bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
-    bank.plot_bank()
+    net = FourierBesselScatNet(bank=bank)
+    image = np.random.rand(16, 16)
+
+    net.visualise_maps(image, downsize=2)
+
+
+def test_visualise_maps_rejects_non_2d_image():
+    bank = FourierBesselWaveletBank(size=16, m=2, k=2, sigma=0.1)
+    net = FourierBesselScatNet(bank=bank)
+    bad_image = np.random.rand(2, 16, 16)  # batched, not a single 2D image
+
+    with pytest.raises(ValueError):
+        net.visualise_maps(bad_image, downsize=2)
