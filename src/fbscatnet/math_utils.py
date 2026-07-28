@@ -126,6 +126,7 @@ def _generate_fourier_bessel_wavelet(
     k: int | np.integer,
     size: int = 50,
     sigma: float = 0.1,
+    norm: str = "l1",
     freq_limit: int = 20,
     verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -154,21 +155,32 @@ def _generate_fourier_bessel_wavelet(
     if m == 0:
         bracket = K * mod_bessel - 2 * np.exp(-(3 * sigma2 * eig2) / 4) + np.exp(-sigma2 * eig2)
         norm_term = 1 / (np.sqrt((np.pi * sigma2) * bracket))
-        Z = start * norm_term * (left_hand - K * sigma2 * np.exp(-(sigma2 * Q**2) / 2))
+
     else:
         norm_term = 1 / (np.sqrt(np.pi * sigma2 * K * mod_bessel))
+
+    if m == 0:
+        Z = start * norm_term * (left_hand - K * sigma2 * np.exp(-(sigma2 * Q**2) / 2))
+    else:
         Z = start * norm_term * left_hand
+
+    if norm == "l1":
+        z_max = np.max(np.abs(Z))
+        Z /= z_max
 
     # --- DIAGNOSTIC PRINTS ---
     if verbose:
         dx = freq[1] - freq[0]
         mean_val = np.abs(np.mean(Z))
-        post_norm_energy = np.sum(np.abs(Z) ** 2) * (dx * dx)
+        if norm == "l2":
+            post_norm_energy = np.sum(np.abs(Z) ** 2) * (dx * dx)
+        else:
+            post_norm_energy = np.max(np.abs(Z))
 
         logger.info(
             f"Wavelet (m={m}, k={k}) | "
             f"Mean (~0): {mean_val:.2e} | "
-            f"L2: {post_norm_energy:.4f} "
+            f"{norm.upper()}: {post_norm_energy:.4f} | "
             f"Eigenvalue: {eigenvalue:.4f}"
         )
     # -------------------------
@@ -177,7 +189,11 @@ def _generate_fourier_bessel_wavelet(
 
 
 def _generate_fourier_low_pass_filter(
-    size: int = 50, sigma: float = 0.1, freq_limit: int = 20, verbose: bool = False
+    size: int = 50,
+    sigma: float = 0.1,
+    norm: str = "l1",
+    freq_limit: int = 20,
+    verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     freq = np.linspace(-freq_limit, freq_limit, size)
     Kx: np.ndarray
@@ -188,14 +204,21 @@ def _generate_fourier_low_pass_filter(
     sigma2 = sigma**2
     Z = np.exp(-(sigma2) * (Q**2) / 2)
 
+    if norm == "l1":
+        z_max = np.max(np.abs(Z))
+        Z /= z_max
+
     # --- DIAGNOSTIC PRINTS ---
     if verbose:
         dx = freq[1] - freq[0]
         mean_val = np.abs(np.mean(Z))
-        post_norm_energy = np.sum(np.abs(Z)) * (dx * dx)
+        if norm == "l2":
+            post_norm_energy = np.sum(np.abs(Z) ** 2) * (dx * dx)
+        else:
+            post_norm_energy = np.max(np.abs(Z))
 
         logger.info(
-            f"Low pass  (m=0, k=0) | Mean (~0): {mean_val:.2e} | L1: {post_norm_energy:.4f}"
+            f"Low pass  (m=0, k=0) | Mean (>0): {mean_val:.2e} | {norm.upper()}: {post_norm_energy:.4f}"
         )
     # -------------------------
 

@@ -27,7 +27,7 @@ class FourierBesselWaveletBank:
     """
 
     def __init__(
-        self, size: int, m: int, k: int, sigma: float = 0.3, verbose: bool = False
+        self, size: int, m: int, k: int, sigma: float = 0.3, norm: str = "l1", verbose: bool = False
     ) -> None:
         """Initialise the FourierBesselWaveletBank.
 
@@ -36,11 +36,13 @@ class FourierBesselWaveletBank:
             m (int): Maximum order.
             k (int): Maximum angular index.
             sigma (float, optional): Scale parameter for the wavelets.
+            norm (str, optional): Wavelet normalisation
             verbose (bool, optional): Display wavelet diagnostic prints. Defaults to False.
 
         Raises:
             ValueError: If angular order k is greater than m.
             ValueError: If input parameters are negative
+            ValueError: If norm is not 'l1' or 'l2'
         """
         self.size = size
         self.m = m
@@ -50,12 +52,16 @@ class FourierBesselWaveletBank:
         self.m_values = np.arange(0, m)
         self.k_values = np.arange(0, k)
         self.verbose = verbose
+        self.norm = norm
 
         if self.m < self.k:
             raise ValueError("m <= k condition is not respected")
 
         if self.m < 0 or self.k < 0 or self.sigma < 0 or self.size <= 0:
             raise ValueError("Cannot accept negative parameters")
+
+        if self.norm not in ("l1", "l2"):
+            raise ValueError(f"Invalid norm: Must be 'l1' or 'l2' not {self.norm}")
 
         self.lambda_max = _find_neumann_root_muller(
             0, int(self.k_values.max()) if len(self.k_values) > 0 else 0
@@ -74,7 +80,8 @@ class FourierBesselWaveletBank:
                 if k_val == 0:
                     _, Z = _generate_fourier_low_pass_filter(
                         size=self.size,
-                        sigma=sigma,
+                        sigma=self.sigma,
+                        norm=self.norm,
                         freq_limit=self.freq_limit,
                         verbose=self.verbose,
                     )
@@ -83,7 +90,8 @@ class FourierBesselWaveletBank:
                         m_val,
                         k_val,
                         size=self.size,
-                        sigma=sigma,
+                        sigma=self.sigma,
+                        norm=self.norm,
                         freq_limit=self.freq_limit,
                         verbose=self.verbose,
                     )
@@ -161,7 +169,13 @@ class FourierBesselWaveletBank:
         if verbose:
             print()
             logger.info("Fourier-Bessel Wavelet bank summary:")
-            logger.info("Parameters: m = %d, k = %d, sigma = %.2f", self.m, self.k, self.sigma)
+            logger.info(
+                "Parameters: m = %d, k = %d, sigma = %.2f, norm = %s",
+                self.m,
+                self.k,
+                self.sigma,
+                self.norm,
+            )
             logger.info("Total wavelets: %d", len(self.wavelet_bank))
             logger.info("Frequency limit: %.2f", self.freq_limit)
             logger.info("Key naming structure: {m_{m_val}_k_{k_val}_s{sigma}}")

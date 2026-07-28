@@ -24,6 +24,7 @@ def test_bank_rejects_k_greater_than_m():
         {"size": 16, "m": 2, "k": 2, "sigma": -0.1},
         {"size": 0, "m": 2, "k": 2, "sigma": 0.1},
         {"size": -4, "m": 2, "k": 2, "sigma": 0.1},
+        {"size": -4, "m": 2, "k": 2, "sigma": 0.1, "norm": "l3"},
     ],
 )
 def test_bank_rejects_invalid_parameters(kwargs):
