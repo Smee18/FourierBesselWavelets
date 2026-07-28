@@ -2,7 +2,12 @@
 
 ## [Unreleased]
 
-## [0.2.2] - 2026-07-28
+## [0.3.0] - 2026-07-28
 ### Added
-- Norm selection 'l1' or 'l2' for wavelets
+- Refactored scatnet.py for better readability
 - Corresponding verbose and tests
+- Prepared for v1.0.0 through extra .yaml config
+- Added detailed README and extra ressources
+
+### Fixed
+- Minor fixes to ensure robustness 

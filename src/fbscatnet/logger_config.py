@@ -13,25 +13,35 @@ class LogColors:
 
 class ColoredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        # Only color the level name
         color = getattr(LogColors, record.levelname, LogColors.RESET)
         colored_level = f"{color}%(levelname)s{LogColors.RESET}"
-
-        # Build the format string with only the level colored
         log_fmt = f"%(asctime)s [{colored_level}] %(message)s"
-
         formatter = logging.Formatter(log_fmt, datefmt="%Y-%m-%d %H:%M:%S")
         return formatter.format(record)
 
 
 def setup_logger(name: str) -> logging.Logger:
+    """Internal function to set up the library logger with a NullHandler."""
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
-
     if not logger.handlers:
+        logger.addHandler(logging.NullHandler())
+    return logger
+
+
+def enable_colored_logs(level: int = logging.INFO) -> None:
+    """
+    Helper function for users to easily enable colored console logging for fbscatnet.
+
+    Usage:
+        import fbscatnet
+        fbscatnet.enable_colored_logs()
+    """
+    # Get the top-level logger for the package
+    logger = logging.getLogger("fbscatnet")
+    logger.setLevel(level)
+
+    # Check if we already added a StreamHandler to avoid duplicates
+    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(ColoredFormatter())
         logger.addHandler(handler)
-
-    return logger

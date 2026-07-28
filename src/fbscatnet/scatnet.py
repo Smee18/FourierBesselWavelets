@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.fft as spfft
 from joblib import Parallel, delayed
-from rainbow_tqdm import tqdm
+from tqdm import tqdm
 
 from .generate_bank import FourierBesselWaveletBank
 from .logger_config import setup_logger
@@ -22,7 +22,7 @@ try:
     try:
         HAS_CUPY = cp.cuda.runtime.getDeviceCount() > 0
     except Exception as exc:
-        logger.debug("CuPy is installed but no usable GPU was detected: %s", exc)
+        logger.warning("CuPy is installed but no usable GPU was detected: %s", exc)
         HAS_CUPY = False
 except ImportError:
     cp = None
@@ -32,7 +32,11 @@ except ImportError:
 def _extract_k(key_str: str) -> int:
     """Extract the integer 'k' index encoded in a filter bank key string."""
     match = re.search(r"k[=_ ]*(\d+)", key_str)
-    return int(match.group(1)) if match else 0
+    if match:
+        return int(match.group(1))
+    else:
+        logger.warning("Valid k key not found in '%s', defaulting to 0", key_str)
+        return 0
 
 
 class FourierBesselScatNet:
@@ -198,6 +202,10 @@ class FourierBesselScatNet:
 
         num_samples = data.shape[0]
         d_size = int(self.size / downsize)
+        if (self.size % downsize) != 0:
+            raise ValueError(
+                f"Image size ({self.size}) must be exactly divisible by downsize ({downsize})."
+            )
 
         order_1_keys = self.order_1_keys
         num_order_1_maps = self.num_order_1_maps
@@ -300,7 +308,7 @@ class FourierBesselScatNet:
                 results.append(_process_batch(batch))
 
         # Re-assemble outputs from batch results
-        order_0_list, order_1_list, order_2_list = zip(*results)
+        order_0_list, order_1_list, order_2_list = zip(*results, strict=True)
 
         order_0_features = xp.concatenate(order_0_list, axis=0)
         first_order_features = xp.concatenate(order_1_list, axis=0)
