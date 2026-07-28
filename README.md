@@ -3,19 +3,19 @@
 [![PyPI version](https://img.shields.io/pypi/v/fbscatnet.svg)](https://pypi.org/project/fbscatnet/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/fbscatnet.svg)](https://pypi.org/project/fbscatnet/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/Smee18/FourierBesselWavelets/actions/workflows/test.yml/badge.svg)](https://github.com/Smee18/FourierBesselWavelets/actions/workflows/test.yml)
+[![CI](https://github.com/Smee18/FourierBesselWavelets/actions/workflows/ci.yml/badge.svg)](https://github.com/Smee18/FourierBesselWavelets/actions/workflows/ci.yml)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 `fbscatnet` is a high-performance Python library for computing **Fourier-Bessel wavelet scattering transforms**. It generates robust, feature embeddings from 2D images, making it an ideal feature extractor for computer vision, biomedical imaging, and physics-based machine learning. This is a brand new project of mine that I have been working on for some time. I would love any criticism, improvements, corrections to both the code and the maths.
 
-## ✨ Features
+## Features
 
 - **Novel Wavelet:** New wavelet relying on Bessel basis functions.
 - **Hardware Accelerated:** Seamlessly switch between multi-core CPU execution (`scipy`/`joblib`) and GPU acceleration (`cupy`).
 - **Highly Optimized:** Vectorised filtering in the frequency domain for maximum throughput across large image batches.
 - **ML-Ready:** Outputs flattened feature arrays directly compatible with `scikit-learn`, `xgboost`, or `pytorch`.
 
-## 📦 Installation
+## Installation
 
 Install the base package (CPU-only) via pip:
 
@@ -70,5 +70,5 @@ net.visualise_maps(single_image, downsize=4)
 
 Sphinx documentation at: https://smee18.github.io/FourierBesselWavelets/
 
-## 📝 License
+## License
 This project is licensed under the MIT License.
