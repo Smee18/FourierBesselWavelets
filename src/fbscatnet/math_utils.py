@@ -12,7 +12,7 @@ logger = setup_logger(__name__)
 
 
 def _first_kind_bessel(X: npt.ArrayLike, order: int | np.integer) -> float | np.ndarray:
-    """Vectorized Bessel function supporting both scalar points and arrays."""
+    """Vectorised Bessel function supporting both scalar points and arrays."""
     X_arr = np.asarray(X)
     abs_order = int(abs(int(order)))
 
@@ -49,6 +49,7 @@ def _first_modified_bessel(X: npt.ArrayLike, order: int | np.integer) -> float |
 
 
 def _mcmahon_seed(m: int | np.integer, k: int | np.integer) -> float:
+    """Approximate the k-th positive root using McMahon's asymptotic expansion."""
     m = int(m)
     k = int(k)
     beta: float
@@ -68,6 +69,7 @@ def _mcmahon_seed(m: int | np.integer, k: int | np.integer) -> float:
 def _find_neumann_root_muller(
     m: int | np.integer, k: int | np.integer, thresh: float = 1e-12, max_iter: int = 200
 ) -> float:
+    """Find the k-th positive root of using Muller's method."""
 
     x3 = 0.0
 
@@ -86,7 +88,7 @@ def _find_neumann_root_muller(
     d1: float = float(f(x1))
     d2: float = float(f(x2))
 
-    iter = 0
+    converged = False
 
     for _ in range(max_iter):
         h1 = x1 - x0
@@ -108,13 +110,20 @@ def _find_neumann_root_muller(
         x3 = np.real(x2 + dx).item()
         d3 = float(f(x3))
         if abs(d3) < thresh or abs(dx) < thresh:
+            converged = True
             break
         x0, x1, x2 = x1, x2, x3
         d0, d1, d2 = d1, d2, d3
-        iter += 1
 
-    if iter == max_iter:
-        logger.warning("Root finder did not converge. Consider increasing max_iter")
+    if not converged:
+        logger.warning(
+            "Root finder did not converge for m=%d, k=%d after %d iterations "
+            "(residual=%.2e). Consider increasing max_iter.",
+            int(m),
+            int(k),
+            max_iter,
+            abs(d3) if "d3" in locals() else float("nan"),
+        )
     return float(x3)
 
 
