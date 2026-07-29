@@ -35,7 +35,9 @@ Extracting features from a dataset takes just a few lines of code:
 
 ```python
 import numpy as np
-from fbscatnet import FourierBesselWaveletBank, FourierBesselScatNet
+import logging
+from fbscatnet import FourierBesselWaveletBank, FourierBesselScatNet, logger_config
+logger_config.enable_colored_logs(logging.DEBUG) # IMPORTANT: SET TO SEE LOGS
 
 # 1. Create some dummy image data (e.g., 10 grayscale images of size 64x64)
 images = np.random.rand(10, 64, 64)
@@ -69,6 +71,9 @@ net.visualise_maps(single_image, downsize=4)
 ## API Overview
 
 Sphinx documentation at: https://smee18.github.io/FourierBesselWavelets/
+
+The `example` folder also contains a full pipeline, classifying MNIST using the library
+The pdf of my notes taken along this project contains an in-depth explanation of the mathematics behind these wavelets. Here you can find all derivations, proofs and useful information. Some stuff might seem trivial but my goal is to really expose all aspects so anyone new to wavelet theory can understand the mathematics behind these Fourier Bessel wavelets.
 
 ## License
 This project is licensed under the MIT License.
