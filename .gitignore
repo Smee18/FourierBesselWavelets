@@ -33,3 +33,6 @@ Thumbs.db
 
 # Features output (from save_embeddings)
 features/
+
+# Models
+models/
