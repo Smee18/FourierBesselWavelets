@@ -3,7 +3,7 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - 'v*'  # Triggers when you push a tag like "v1.0.0"
+      - 'v*'  # Triggers on any tag pushed to GitHub (v0.1, v1.0, v1.3.2, etc.)
 
 jobs:
   pypi-publish:
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed here too so hatch-vcs gets the version right!
+          fetch-depth: 0  # Needed so hatch-vcs gets the version right!
           
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,4 +30,7 @@ jobs:
         run: python -m build
         
       - name: Publish package
+        # This matches tags with exactly two numbers (e.g., v1.0, v2.1) 
+        # and skips three-part tags (e.g., v1.3.2) or zero-prefixed versions.
+        if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '.') && !contains(github.ref, 'v0.')
         uses: pypa/gh-action-pypi-publish@release/v1
