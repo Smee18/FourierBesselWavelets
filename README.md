@@ -4,6 +4,7 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/fbscatnet.svg)](https://pypi.org/project/fbscatnet/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/Smee18/FourierBesselWavelets/actions/workflows/ci.yml/badge.svg)](https://github.com/Smee18/FourierBesselWavelets/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Smee18/36c71b13aa4288c24a60643049a4a044/raw/coverage.json)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 `fbscatnet` is a high-performance Python library for computing **Fourier-Bessel wavelet scattering transforms**. It generates robust, feature embeddings from 2D images, making it an ideal feature extractor for computer vision, biomedical imaging, and physics-based machine learning. This is a brand new project of mine that I have been working on for some time. I would love any criticism, improvements, corrections to both the code and the maths.

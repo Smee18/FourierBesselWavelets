@@ -11,10 +11,46 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # needed for hatch-vcs to see git tags
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
+
+      - run: pip install -e ".[dev]" pytest-cov
+
       - run: ruff check .
+
       - run: mypy src/
-      - run: pytest -v
+
+      # 1. Run tests and export coverage report
+      - name: Run Tests with Coverage
+        run: pytest -v --cov=src --cov-report=xml
+
+      # 2. Extract coverage & update Gist directly in one clean script
+      - name: Update Coverage Badge Gist
+        if: matrix.python-version == '3.12' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          # Calculate integer percentage
+          SCORE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); print(round(float(tree.getroot().attrib['line-rate']) * 100))")
+          
+          # Determine color
+          if [ "$SCORE" -ge 90 ]; then COLOR="brightgreen";
+          elif [ "$SCORE" -ge 75 ]; then COLOR="green";
+          elif [ "$SCORE" -ge 60 ]; then COLOR="yellow";
+          else COLOR="red"; fi
+
+          # Update Gist directly via GitHub REST API
+          JSON_PAYLOAD=$(jq -n \
+            --arg schemaVersion 1 \
+            --arg label "coverage" \
+            --arg message "${SCORE}%" \
+            --arg color "$COLOR" \
+            '{files: {"coverage.json": {content: ({schemaVersion: ($schemaVersion|tonumber), label: $label, message: $message, color: $color} | tojson)}}}')
+
+          curl -X PATCH \
+            -H "Authorization: Bearer $GIST_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/gists/36c71b13aa4288c24a60643049a4a044 \
+            -d "$JSON_PAYLOAD"
