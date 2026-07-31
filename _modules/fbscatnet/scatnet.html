@@ -1,0 +1,578 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>fbscatnet.scatnet &mdash; fbscatnet 0.1.dev1+g496c19b69 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=9ab90032"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            fbscatnet
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <!-- Local TOC -->
+              <div class="local-toc"></div>
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">fbscatnet</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">fbscatnet.scatnet</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for fbscatnet.scatnet</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy.fft</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">spfft</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">joblib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Parallel</span><span class="p">,</span> <span class="n">delayed</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.generate_bank</span><span class="w"> </span><span class="kn">import</span> <span class="n">FourierBesselWaveletBank</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.logger_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">setup_logger</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">setup_logger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">cupy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cp</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">HAS_CUPY</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">runtime</span><span class="o">.</span><span class="n">getDeviceCount</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;CuPy is installed but no usable GPU was detected: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="n">HAS_CUPY</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">cp</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">HAS_CUPY</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_k</span><span class="p">(</span><span class="n">key_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract the integer &#39;k&#39; index encoded in a filter bank key string.&quot;&quot;&quot;</span>
+    <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;k[=_ ]*(\d+)&quot;</span><span class="p">,</span> <span class="n">key_str</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">match</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Valid k key not found in &#39;</span><span class="si">%s</span><span class="s2">&#39;, defaulting to 0&quot;</span><span class="p">,</span> <span class="n">key_str</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mi">0</span>
+
+
+<div class="viewcode-block" id="FourierBesselScatNet">
+<a class="viewcode-back" href="../../index.html#fbscatnet.scatnet.FourierBesselScatNet">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FourierBesselScatNet</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A scattering network based on Fourier-Bessel wavelets for generating image embeddings.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        size (int): Image spatial size.</span>
+<span class="sd">        bank (FourierBesselWaveletBank): The bank of Fourier-Bessel wavelets.</span>
+<span class="sd">        num_filters (int): Total number of filters in the wavelet bank.</span>
+<span class="sd">        bank_keys (list[str]): List of string keys representing the filters.</span>
+<span class="sd">        low_pass (np.ndarray): Low-pass filter array retrieved from the bank.</span>
+<span class="sd">        final_features (np.ndarray): Generated feature embeddings from the last run.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bank</span><span class="p">:</span> <span class="n">FourierBesselWaveletBank</span><span class="p">,</span> <span class="n">backend</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialise the FourierBesselScatNet.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            bank (FourierBesselWaveletBank): A configured bank of Fourier-Bessel wavelets.</span>
+<span class="sd">            backend (str): Device to operate on</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ImportError: If CuPy requested but no GPU.</span>
+<span class="sd">            ValueError: If the bank contains no band-pass wavelets (i.e. only</span>
+<span class="sd">                the (0, 0) low-pass filter), since the scattering cascade has</span>
+<span class="sd">                nothing to filter with in that case.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;gpu&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">HAS_CUPY</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+                <span class="s2">&quot;GPU backend was requested, but &#39;cupy&#39; is not&quot;</span>
+                <span class="s2">&quot;&quot;</span>
+                <span class="s2">&quot;installed or no compatible GPU was found.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">bank</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;The wavelet bank contains no band-pass wavelets (only the &quot;</span>
+                <span class="s2">&quot;low-pass filter). FourierBesselScatNet needs at least one &quot;</span>
+                <span class="s2">&quot;wavelet - try constructing the bank with m &gt; 1 and/or k &gt; 1.&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xp</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">cp</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;gpu&quot;</span> <span class="k">else</span> <span class="n">np</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="o">=</span> <span class="n">bank</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bank</span> <span class="o">=</span> <span class="n">bank</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_filters</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">bank</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bank_keys</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">bank</span><span class="o">.</span><span class="n">get_keys</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">low_pass</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bank</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">xp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">final_features</span><span class="p">:</span> <span class="n">Any</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Precompute everything that is constant across batches</span>
+        <span class="n">xp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xp</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">order_1_keys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bank_keys</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_order_1_maps</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">order_1_keys</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_k_map</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">_extract_k</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">order_1_keys</span><span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_order2_children</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">key1</span><span class="p">:</span> <span class="p">[</span><span class="n">key2</span> <span class="k">for</span> <span class="n">key2</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">order_1_keys</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_k_map</span><span class="p">[</span><span class="n">key2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_k_map</span><span class="p">[</span><span class="n">key1</span><span class="p">]]</span>
+            <span class="k">for</span> <span class="n">key1</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">order_1_keys</span>
+        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_order_2_maps</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_order2_children</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_filters_1</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">key</span><span class="p">:</span> <span class="n">xp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bank</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">xp</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">order_1_keys</span>
+        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_low_pass_c</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bank</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">xp</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span>
+
+        <span class="c1"># Stacked filter tensors for vectorised filtering.</span>
+        <span class="c1"># Shape: (num_order_1_maps, H, W)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_filters_1_stack</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">_filters_1</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">order_1_keys</span><span class="p">])</span>
+
+        <span class="c1"># Per-key1 stacked children filters for vectorised order-2 filtering.</span>
+        <span class="c1"># Shape per entry: (num_children, H, W), or None if no valid children.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_filters_2_stack_by_key1</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">key1</span><span class="p">:</span> <span class="p">(</span><span class="n">xp</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">_filters_1</span><span class="p">[</span><span class="n">k2</span><span class="p">]</span> <span class="k">for</span> <span class="n">k2</span> <span class="ow">in</span> <span class="n">children</span><span class="p">])</span> <span class="k">if</span> <span class="n">children</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">key1</span><span class="p">,</span> <span class="n">children</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_order2_children</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fft2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">xp</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Backend-aware 2D FFT (uses scipy on CPU for multi-threaded speed, cupy on GPU).&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;gpu&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft2</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">spfft</span><span class="o">.</span><span class="n">fft2</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">workers</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ifft2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">xp</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Backend-aware inverse 2D FFT, mirroring `_fft2`.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;gpu&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft2</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">spfft</span><span class="o">.</span><span class="n">ifft2</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">workers</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_filter_and_modulus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">xp</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">freq_signal</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">filters</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply wavelet filter(s) in the frequency domain and take the spatial modulus.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            xp: The array module to use (numpy or cupy) for this batch.</span>
+<span class="sd">            freq_signal: Input already in fftshifted frequency domain,</span>
+<span class="sd">                broadcastable against `filters`.</span>
+<span class="sd">            filters: One or a stack of frequency-domain filters to apply.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The fftshifted frequency-domain modulus.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">filtered_fft</span> <span class="o">=</span> <span class="n">freq_signal</span> <span class="o">*</span> <span class="n">filters</span>
+        <span class="n">shifted_freq</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">filtered_fft</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">spatial_complex</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ifft2</span><span class="p">(</span><span class="n">shifted_freq</span><span class="p">,</span> <span class="n">xp</span><span class="p">)</span>
+        <span class="n">modulus_spatial</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">spatial_complex</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">xp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_fft2</span><span class="p">(</span><span class="n">modulus_spatial</span><span class="p">,</span> <span class="n">xp</span><span class="p">),</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">xp</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_smooth_and_pool</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">xp</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">modulus_fft</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">low_pass_c</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">n_maps</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">d_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">downsize</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Low-pass smooth a modulus map and block-mean-pool it down to `d_size`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            xp: The array module to use (numpy or cupy) for this batch.</span>
+<span class="sd">            modulus_fft: Output of `_filter_and_modulus`, shape (batch, n_maps, H, W).</span>
+<span class="sd">            low_pass_c: Broadcastable complex low-pass filter.</span>
+<span class="sd">            batch_size: Number of samples in this batch.</span>
+<span class="sd">            n_maps: Number of filter channels being pooled.</span>
+<span class="sd">            d_size: Output spatial size after downsampling (H // downsize).</span>
+<span class="sd">            downsize: Block-mean pooling factor.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Real-valued pooled features of shape (batch_size, d_size, d_size, n_maps).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">filtered_low_pass</span> <span class="o">=</span> <span class="n">modulus_fft</span> <span class="o">*</span> <span class="n">low_pass_c</span>
+        <span class="n">smoothed_shifted</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">filtered_low_pass</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">smoothed_spatial</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ifft2</span><span class="p">(</span><span class="n">smoothed_shifted</span><span class="p">,</span> <span class="n">xp</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">xp</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">smoothed_spatial</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">n_maps</span><span class="p">,</span> <span class="n">d_size</span><span class="p">,</span> <span class="n">downsize</span><span class="p">,</span> <span class="n">d_size</span><span class="p">,</span> <span class="n">downsize</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+            <span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="FourierBesselScatNet.generate_embeddings">
+<a class="viewcode-back" href="../../index.html#fbscatnet.scatnet.FourierBesselScatNet.generate_embeddings">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_embeddings</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">downsize</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
+        <span class="n">use_multiprocessing</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate scattering network feature embeddings for a given dataset.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            data (np.ndarray): Input image dataset of shape (num_samples, height, width).</span>
+<span class="sd">            downsize (int): Spatial downsampling factor via block mean pooling.</span>
+<span class="sd">            batch_size (int, optional): Number of samples per batch. Defaults to 32.</span>
+<span class="sd">            use_multiprocessing (bool, optional): Whether to use multiple CPU cores</span>
+<span class="sd">                (Ignored if backend=&#39;gpu&#39;). Defaults to False.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            np.ndarray: Flattened feature embeddings of shape (num_samples, feature_dim).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">xp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">xp</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="n">num_samples</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">d_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="o">/</span> <span class="n">downsize</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="o">%</span> <span class="n">downsize</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Image size (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">size</span><span class="si">}</span><span class="s2">) must be exactly divisible by downsize (</span><span class="si">{</span><span class="n">downsize</span><span class="si">}</span><span class="s2">).&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">order_1_keys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">order_1_keys</span>
+        <span class="n">num_order_1_maps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_order_1_maps</span>
+        <span class="n">num_order_2_maps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_order_2_maps</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_process_batch</span><span class="p">(</span><span class="n">batch_data</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+            <span class="n">b_xp</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">cp</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;gpu&quot;</span> <span class="k">else</span> <span class="n">np</span>
+            <span class="n">b_data</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">b_xp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">batch_data</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">b_xp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;gpu&quot;</span>
+                <span class="k">else</span> <span class="n">batch_data</span>
+            <span class="p">)</span>
+            <span class="n">curr_batch_size</span> <span class="o">=</span> <span class="n">b_data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="n">batch_fft</span> <span class="o">=</span> <span class="n">b_xp</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_fft2</span><span class="p">(</span><span class="n">b_data</span><span class="p">,</span> <span class="n">b_xp</span><span class="p">),</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span>
+                <span class="n">b_xp</span><span class="o">.</span><span class="n">complex64</span>
+            <span class="p">)</span>
+
+            <span class="n">low_pass_c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_low_pass_c</span>
+
+            <span class="c1"># ORDER 0: plain low-pass response, no modulus non-linearity.</span>
+            <span class="n">low_pass_spatial</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ifft2</span><span class="p">(</span>
+                <span class="n">b_xp</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">batch_fft</span> <span class="o">*</span> <span class="n">low_pass_c</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">b_xp</span>
+            <span class="p">)</span>
+            <span class="n">low_pass_down</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">b_xp</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">low_pass_spatial</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">d_size</span><span class="p">,</span> <span class="n">downsize</span><span class="p">,</span> <span class="n">d_size</span><span class="p">,</span> <span class="n">downsize</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+            <span class="p">)</span>
+            <span class="n">order_0_res</span> <span class="o">=</span> <span class="n">low_pass_down</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">curr_batch_size</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+            <span class="c1"># ORDER 1: filter with every wavelet, take modulus, smooth, pool.</span>
+            <span class="n">bank_1_stack</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filters_1_stack</span>  <span class="c1"># (num_filters, H, W)</span>
+            <span class="n">modulus_fft_1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter_and_modulus</span><span class="p">(</span>
+                <span class="n">b_xp</span><span class="p">,</span> <span class="n">batch_fft</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:],</span> <span class="n">bank_1_stack</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="p">:]</span>
+            <span class="p">)</span>
+            <span class="n">batch_pooled_order_1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_smooth_and_pool</span><span class="p">(</span>
+                <span class="n">b_xp</span><span class="p">,</span>
+                <span class="n">modulus_fft_1</span><span class="p">,</span>
+                <span class="n">low_pass_c</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:],</span>
+                <span class="n">curr_batch_size</span><span class="p">,</span>
+                <span class="n">num_order_1_maps</span><span class="p">,</span>
+                <span class="n">d_size</span><span class="p">,</span>
+                <span class="n">downsize</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="c1"># ORDER 2: for each order-1 channel, filter again with only the</span>
+            <span class="c1"># wavelets of strictly lower angular index k</span>
+            <span class="n">batch_pooled_order_2</span> <span class="o">=</span> <span class="n">b_xp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">curr_batch_size</span><span class="p">,</span> <span class="n">d_size</span><span class="p">,</span> <span class="n">d_size</span><span class="p">,</span> <span class="n">num_order_2_maps</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">b_xp</span><span class="o">.</span><span class="n">float32</span>
+            <span class="p">)</span>
+            <span class="n">order_2_idx</span> <span class="o">=</span> <span class="mi">0</span>
+
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">key1</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">order_1_keys</span><span class="p">):</span>
+                <span class="n">children</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_order2_children</span><span class="p">[</span><span class="n">key1</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">children</span><span class="p">:</span>
+                    <span class="k">continue</span>
+
+                <span class="n">filters_2_stack</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filters_2_stack_by_key1</span><span class="p">[</span><span class="n">key1</span><span class="p">]</span>  <span class="c1"># (n_children, H, W)</span>
+                <span class="n">mod_fft_1_single</span> <span class="o">=</span> <span class="n">modulus_fft_1</span><span class="p">[:,</span> <span class="n">i</span><span class="p">]</span>  <span class="c1"># (batch, H, W)</span>
+
+                <span class="n">modulus_fft_2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter_and_modulus</span><span class="p">(</span>
+                    <span class="n">b_xp</span><span class="p">,</span> <span class="n">mod_fft_1_single</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:],</span> <span class="n">filters_2_stack</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="p">:]</span>
+                <span class="p">)</span>
+                <span class="n">n_children</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">children</span><span class="p">)</span>
+                <span class="n">down</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_smooth_and_pool</span><span class="p">(</span>
+                    <span class="n">b_xp</span><span class="p">,</span>
+                    <span class="n">modulus_fft_2</span><span class="p">,</span>
+                    <span class="n">low_pass_c</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:],</span>
+                    <span class="n">curr_batch_size</span><span class="p">,</span>
+                    <span class="n">n_children</span><span class="p">,</span>
+                    <span class="n">d_size</span><span class="p">,</span>
+                    <span class="n">downsize</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">batch_pooled_order_2</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">order_2_idx</span> <span class="p">:</span> <span class="n">order_2_idx</span> <span class="o">+</span> <span class="n">n_children</span><span class="p">]</span> <span class="o">=</span> <span class="n">down</span>
+                <span class="n">order_2_idx</span> <span class="o">+=</span> <span class="n">n_children</span>
+
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="n">order_0_res</span><span class="p">,</span>
+                <span class="n">batch_pooled_order_1</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">curr_batch_size</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">batch_pooled_order_2</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">curr_batch_size</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Build batches index ranges</span>
+        <span class="n">batches</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">data</span><span class="p">[</span><span class="n">start</span> <span class="p">:</span> <span class="nb">min</span><span class="p">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">num_samples</span><span class="p">)]</span>
+            <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">num_samples</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="c1"># Execution Selection</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span> <span class="ow">and</span> <span class="n">use_multiprocessing</span><span class="p">:</span>
+            <span class="n">nb_cpu</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">1</span>
+            <span class="n">n_jobs</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">nb_cpu</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span> <span class="ow">and</span> <span class="n">nb_cpu</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="mi">1</span>
+            <span class="n">results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_multiprocess</span><span class="p">(</span><span class="n">batches</span><span class="p">,</span> <span class="n">_process_batch</span><span class="p">,</span> <span class="n">n_jobs</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span>
+                <span class="n">batches</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Generating Embeddings on </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">backend</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;batch&quot;</span>
+            <span class="p">):</span>
+                <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_process_batch</span><span class="p">(</span><span class="n">batch</span><span class="p">))</span>
+
+        <span class="c1"># Re-assemble outputs from batch results</span>
+        <span class="n">order_0_list</span><span class="p">,</span> <span class="n">order_1_list</span><span class="p">,</span> <span class="n">order_2_list</span> <span class="o">=</span> <span class="nb">zip</span><span class="p">(</span><span class="o">*</span><span class="n">results</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">order_0_features</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">order_0_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">first_order_features</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">order_1_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">second_order_features</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">order_2_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">final_features</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">order_0_features</span><span class="p">,</span> <span class="n">first_order_features</span><span class="p">,</span> <span class="n">second_order_features</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">final_features</span> <span class="o">=</span> <span class="n">final_features</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;gpu&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">final_features</span><span class="o">.</span><span class="n">get</span><span class="p">())</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">final_features</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_multiprocess</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">batches</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span> <span class="n">_process_batch</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">n_jobs</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run batches across multiple processes with a progress bar&quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Joblib generator evaluation wrapped inside tqdm</span>
+            <span class="k">with</span> <span class="n">tqdm</span><span class="p">(</span>
+                <span class="n">total</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">batches</span><span class="p">),</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;Generating Embeddings (Multiprocessing)&quot;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;batch&quot;</span>
+            <span class="p">)</span> <span class="k">as</span> <span class="n">pbar</span><span class="p">:</span>
+                <span class="n">job_results</span> <span class="o">=</span> <span class="n">Parallel</span><span class="p">(</span><span class="n">n_jobs</span><span class="o">=</span><span class="n">n_jobs</span><span class="p">,</span> <span class="n">return_as</span><span class="o">=</span><span class="s2">&quot;generator&quot;</span><span class="p">)(</span>
+                    <span class="n">delayed</span><span class="p">(</span><span class="n">_process_batch</span><span class="p">)(</span><span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">batches</span>
+                <span class="p">)</span>
+                <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">res</span> <span class="ow">in</span> <span class="n">job_results</span><span class="p">:</span>
+                    <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+                    <span class="n">pbar</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+            <span class="c1"># Fallback for older joblib versions without generator support</span>
+            <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">res</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span>
+                <span class="n">Parallel</span><span class="p">(</span><span class="n">n_jobs</span><span class="o">=</span><span class="n">n_jobs</span><span class="p">)(</span><span class="n">delayed</span><span class="p">(</span><span class="n">_process_batch</span><span class="p">)(</span><span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">batches</span><span class="p">),</span>
+                <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;Generating Embeddings (Multiprocessing)&quot;</span><span class="p">,</span>
+                <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;batch&quot;</span><span class="p">,</span>
+            <span class="p">):</span>
+                <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">results</span>
+
+<div class="viewcode-block" id="FourierBesselScatNet.save_embeddings">
+<a class="viewcode-back" href="../../index.html#fbscatnet.scatnet.FourierBesselScatNet.save_embeddings">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_embeddings</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save the generated feature embeddings to a compressed .npz file.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_features</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No embeddings found. Run generate_embeddings() first.&quot;</span><span class="p">)</span>
+
+        <span class="n">m</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">sigma</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bank</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">save_path</span> <span class="o">=</span> <span class="sa">rf</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">/embedding_m</span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">_k</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">_sigma</span><span class="si">{</span><span class="n">sigma</span><span class="si">}</span><span class="s2">.npz&quot;</span>
+
+        <span class="n">features</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_features</span><span class="o">.</span><span class="n">get</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">backend</span> <span class="o">==</span> <span class="s2">&quot;gpu&quot;</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">final_features</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">savez_compressed</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="n">embedding</span><span class="o">=</span><span class="n">features</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Embedding successfully saved to &#39;</span><span class="si">%s</span><span class="s2">&#39;&quot;</span><span class="p">,</span> <span class="n">save_path</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FourierBesselScatNet.visualise_maps">
+<a class="viewcode-back" href="../../index.html#fbscatnet.scatnet.FourierBesselScatNet.visualise_maps">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">visualise_maps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">downsize</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Visualises Order 0 and Order 1 scattering maps.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            image (np.ndarray): A single 2D image array (height, width).</span>
+<span class="sd">            downsize (int): Spatial downsampling factor. Set to 1 for no downsampling.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">image</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Please provide a single 2D image array of shape (height, width).&quot;</span><span class="p">)</span>
+
+        <span class="n">d_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="o">/</span> <span class="n">downsize</span><span class="p">)</span>
+
+        <span class="c1"># Add fake batch dimension to match FFT logic</span>
+        <span class="n">batch</span> <span class="o">=</span> <span class="n">image</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+        <span class="n">batch_fft</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft2</span><span class="p">(</span><span class="n">batch</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+
+        <span class="c1"># Dictionaries to hold maps for plotting</span>
+        <span class="n">maps</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># ORDER 0</span>
+        <span class="n">low_pass_coeffs</span> <span class="o">=</span> <span class="n">batch_fft</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">low_pass</span>
+        <span class="n">low_pass_spatial</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft2</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">low_pass_coeffs</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+        <span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="n">low_pass_down</span> <span class="o">=</span> <span class="n">low_pass_spatial</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">d_size</span><span class="p">,</span> <span class="n">downsize</span><span class="p">,</span> <span class="n">d_size</span><span class="p">,</span> <span class="n">downsize</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span>
+            <span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">maps</span><span class="p">[</span><span class="s2">&quot;Order 0 (Low Pass)&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">low_pass_down</span>
+
+        <span class="c1"># ORDER 1</span>
+        <span class="n">order_1_keys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bank_keys</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+
+        <span class="k">for</span> <span class="n">key1</span> <span class="ow">in</span> <span class="n">order_1_keys</span><span class="p">:</span>
+            <span class="n">wavelet_fft</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bank</span><span class="p">[</span><span class="n">key1</span><span class="p">]</span>
+
+            <span class="c1"># Standard scattering cascade</span>
+            <span class="n">filtered_fft</span> <span class="o">=</span> <span class="n">batch_fft</span> <span class="o">*</span> <span class="n">wavelet_fft</span>
+            <span class="n">spatial_complex</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft2</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">filtered_fft</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">modulus_spatial</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">spatial_complex</span><span class="p">)</span>
+
+            <span class="n">modulus_fft</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft2</span><span class="p">(</span><span class="n">modulus_spatial</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">filtered_low_pass</span> <span class="o">=</span> <span class="n">modulus_fft</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">low_pass</span>
+
+            <span class="n">smoothed_spatial</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft2</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">filtered_low_pass</span><span class="p">,</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">axes</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+            <span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="c1"># Downsample</span>
+            <span class="n">smoothed_down</span> <span class="o">=</span> <span class="n">smoothed_spatial</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">d_size</span><span class="p">,</span> <span class="n">downsize</span><span class="p">,</span> <span class="n">d_size</span><span class="p">,</span> <span class="n">downsize</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span>
+                <span class="n">axis</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="p">)</span>
+
+            <span class="n">maps</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;Order 1 (</span><span class="si">{</span><span class="n">key1</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">smoothed_down</span>
+
+        <span class="c1"># DYNAMIC GRID CALCULATION</span>
+        <span class="n">num_maps</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">maps</span><span class="p">)</span>
+
+        <span class="c1"># Find the best exact integer factors</span>
+        <span class="n">best_factor</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">num_maps</span><span class="p">))</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">num_maps</span> <span class="o">%</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">best_factor</span> <span class="o">=</span> <span class="n">i</span>
+
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">best_factor</span>
+        <span class="n">cols</span> <span class="o">=</span> <span class="n">num_maps</span> <span class="o">//</span> <span class="n">best_factor</span>
+
+        <span class="c1"># Fallback for prime numbers or extremely stretched grids</span>
+        <span class="c1"># If the aspect ratio is wider than 3:1, use a square-ish grid instead.</span>
+        <span class="k">if</span> <span class="n">cols</span> <span class="o">/</span> <span class="n">rows</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">cols</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">num_maps</span><span class="p">)))</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">num_maps</span> <span class="o">/</span> <span class="n">cols</span><span class="p">))</span>
+
+        <span class="c1"># PLOTTING</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">cols</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="n">cols</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span> <span class="n">rows</span> <span class="o">*</span> <span class="mi">3</span><span class="p">))</span>
+
+        <span class="c1"># Flatten the axes array so we can iterate through it easily</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">axes</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="n">axes</span> <span class="o">=</span> <span class="n">axes</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">axes</span> <span class="o">=</span> <span class="p">[</span><span class="n">axes</span><span class="p">]</span>  <span class="c1"># Catches the edge case where num_maps == 1</span>
+
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">map_data</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">maps</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+            <span class="n">axes</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">map_data</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s2">&quot;inferno&quot;</span><span class="p">)</span>
+            <span class="n">axes</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+            <span class="n">axes</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s2">&quot;off&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Turn off the axes for any leftover empty subplots from the prime-number fallback</span>
+        <span class="k">for</span> <span class="n">empty_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_maps</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">axes</span><span class="p">)):</span>
+            <span class="n">axes</span><span class="p">[</span><span class="n">empty_idx</span><span class="p">]</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s2">&quot;off&quot;</span><span class="p">)</span>
+
+        <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Marcel Venturotti.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
