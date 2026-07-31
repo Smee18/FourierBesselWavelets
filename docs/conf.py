@@ -1,10 +1,14 @@
 import os
 import sys
+from importlib.metadata import PackageNotFoundError, version
 
 project = "fbscatnet"
 copyright = "2026, Marcel Venturotti"
 author = "Marcel Venturotti"
-release = "0.1.0"
+try:
+    release = version("fbscatnet")
+except PackageNotFoundError:
+    release = "0.0.0"
 
 sys.path.insert(0, os.path.abspath("../src"))
 
