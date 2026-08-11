@@ -33,13 +33,17 @@ def _first_kind_bessel_deriv(X: npt.ArrayLike, order: int | np.integer) -> float
     return val
 
 
-def _first_modified_bessel(X: npt.ArrayLike, order: int | np.integer) -> float | np.ndarray:
-    """Modified Bessel function supporting both scalar points and arrays."""
-
+def _first_modified_bessel(
+    X: npt.ArrayLike, order: int | np.integer, scaled: bool = False
+) -> float | np.ndarray:
+    """Modified Bessel function supporting both scalar points, arrays, and exponential scaling."""
     X_arr = np.asarray(X)
-    val = scipy.special.iv(order, X_arr)
 
-    # If the input was a scalar, return a Python float; otherwise the array
+    if scaled:
+        val = scipy.special.ive(order, X_arr)
+    else:
+        val = scipy.special.iv(order, X_arr)
+
     if np.isscalar(X):
         return float(np.asarray(val).item())
     return cast(np.ndarray, np.asarray(val))
@@ -134,7 +138,7 @@ def _generate_fourier_bessel_wavelet(
     m: int | np.integer,
     k: int | np.integer,
     size: int = 50,
-    sigma: float = 0.1,
+    sigma: float = 1.0,
     norm: str = "l1",
     freq_limit: int = 20,
     verbose: bool = False,
@@ -155,18 +159,20 @@ def _generate_fourier_bessel_wavelet(
     angular_profile = np.exp(1j * m * Psi)
     K = np.exp(-(eig2 * sigma2) / 2)
 
-    mod_bessel = _first_modified_bessel((eig2 * sigma2) / 2, m)
-    mod_bessel_freq = _first_modified_bessel(eigenvalue * sigma2 * Q, m)
+    mod_bessel = _first_modified_bessel((eig2 * sigma2) / 2, m, True)
+    mod_bessel_freq = _first_modified_bessel(eigenvalue * sigma2 * Q, m, True)
 
     start = (1j**m) * angular_profile
-    left_hand = sigma2 * np.exp(-(sigma2 * (eig2 + Q**2)) / 2) * mod_bessel_freq
+    left_hand = (
+        sigma2 * np.exp(-(sigma2 * (eig2 + Q**2)) / 2 + eigenvalue * sigma2 * Q) * mod_bessel_freq
+    )
 
     if m == 0:
-        bracket = K * mod_bessel - 2 * np.exp(-(3 * sigma2 * eig2) / 4) + np.exp(-sigma2 * eig2)
+        bracket = mod_bessel - 2 * np.exp(-(3 * sigma2 * eig2) / 4) + np.exp(-sigma2 * eig2)
         norm_term = 1 / (np.sqrt((np.pi * sigma2) * bracket))
 
     else:
-        norm_term = 1 / (np.sqrt(np.pi * sigma2 * K * mod_bessel))
+        norm_term = 1 / (np.sqrt(np.pi * sigma2 * mod_bessel))
 
     if m == 0:
         Z = start * norm_term * (left_hand - K * sigma2 * np.exp(-(sigma2 * Q**2) / 2))
@@ -199,7 +205,7 @@ def _generate_fourier_bessel_wavelet(
 
 def _generate_fourier_low_pass_filter(
     size: int = 50,
-    sigma: float = 0.1,
+    sigma: float = 1.0,
     norm: str = "l1",
     freq_limit: int = 20,
     verbose: bool = False,
@@ -234,3 +240,24 @@ def _generate_fourier_low_pass_filter(
     # -------------------------
 
     return Q, Z
+
+
+def _choose_fourier_bound(
+    sigma: float, eigenvalue_max: float, size: int, C: float = 4.5, min_samples_per_bump: int = 6
+) -> int:
+    """
+    Calculates the required frequency limit to capture the highest-k wavelet.
+    Forces the domain to fit the wavelets, regardless of image size.
+    """
+    freq_limit = eigenvalue_max + (C / sigma)
+
+    dq = 2 * freq_limit / (size - 1)
+    samples_per_bump = (1 / sigma) / dq
+
+    if samples_per_bump < min_samples_per_bump:
+        print(
+            f"Warning: At size={size}, resolution is low ({samples_per_bump:.1f} pixels per bump). "
+            f"The wavelets will fit completely, but the rings may appear aliased or blocky."
+        )
+
+    return int(freq_limit)
