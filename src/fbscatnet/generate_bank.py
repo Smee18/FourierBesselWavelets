@@ -5,6 +5,7 @@ import numpy as np
 
 from .logger_config import setup_logger
 from .math_utils import (
+    _choose_fourier_bound,
     _find_neumann_root_muller,
     _generate_fourier_bessel_wavelet,
     _generate_fourier_low_pass_filter,
@@ -27,7 +28,7 @@ class FourierBesselWaveletBank:
     """
 
     def __init__(
-        self, size: int, m: int, k: int, sigma: float = 0.3, norm: str = "l1", verbose: bool = False
+        self, size: int, m: int, k: int, sigma: float = 1.0, norm: str = "l1", verbose: bool = False
     ) -> None:
         """Initialise the FourierBesselWaveletBank.
 
@@ -70,7 +71,9 @@ class FourierBesselWaveletBank:
         wavelet_bank: dict[str, np.ndarray] = {}
         mk_to_key: dict[tuple, str] = {}
 
-        self.freq_limit = int(self.lambda_max + 2 / self.sigma)
+        self.freq_limit = _choose_fourier_bound(
+            sigma=sigma, eigenvalue_max=self.lambda_max, size=self.size
+        )
 
         for k_val in self.k_values:
             for m_val in self.m_values:
