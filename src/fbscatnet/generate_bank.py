@@ -55,7 +55,7 @@ class FourierBesselWaveletBank:
         self.verbose = verbose
         self.norm = norm
 
-        if self.m < self.k:
+        if self.m > self.k:
             raise ValueError("m <= k condition is not respected")
 
         if self.m < 0 or self.k < 0 or self.sigma < 0 or self.size <= 0:
