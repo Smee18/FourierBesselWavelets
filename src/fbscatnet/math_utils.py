@@ -297,8 +297,8 @@ def _solid_harmonic_wavelet_fourier(
 
     # --- DIAGNOSTIC PRINTS ---
     if verbose:
-        mean_val = np.abs(np.mean(Z))
-        post_norm_energy = np.max(np.abs(Z))
+        mean_val = np.abs(np.mean(final))
+        post_norm_energy = np.max(np.abs(final))
 
         logger.info(
             f"Wavelet (m={m}, k={k}) | "
@@ -325,7 +325,7 @@ def _solid_harmonics_low_pass_filter(
 
         logger.info(
             f"Wavelet (m={0}, k={0}) | "
-            f"Mean (~0): {mean_val:.2e} | "
+            f"Mean (>0): {mean_val:.2e} | "
             f"{'L1'}: {post_norm_energy:.4f} | "
         )
     return low_pass_filter
