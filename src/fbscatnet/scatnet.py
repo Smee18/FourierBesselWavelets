@@ -9,8 +9,9 @@ import scipy.fft as spfft
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from .generate_bank import FourierBesselWaveletBank
+from .fb_bank import FourierBesselWaveletBank
 from .logger_config import setup_logger
+from .sh_bank import SolidHarmonicsWaveletBank
 
 logger = setup_logger(__name__)
 
@@ -39,24 +40,30 @@ def _extract_k(key_str: str) -> int:
         return 0
 
 
-class FourierBesselScatNet:
-    """A scattering network based on Fourier-Bessel wavelets for generating image embeddings.
+class ScatNet:
+    """A scattering network for generating image embeddings.
 
     Attributes:
         size (int): Image spatial size.
-        bank (FourierBesselWaveletBank): The bank of Fourier-Bessel wavelets.
+        bank (WaveletBank): The bank of wavelets.
         num_filters (int): Total number of filters in the wavelet bank.
         bank_keys (list[str]): List of string keys representing the filters.
         low_pass (np.ndarray): Low-pass filter array retrieved from the bank.
         final_features (np.ndarray): Generated feature embeddings from the last run.
     """
 
-    def __init__(self, bank: FourierBesselWaveletBank, backend: str = "cpu") -> None:
-        """Initialise the FourierBesselScatNet.
+    def __init__(
+        self,
+        bank: FourierBesselWaveletBank | SolidHarmonicsWaveletBank,
+        backend: str = "cpu",
+        verbose: bool = True,
+    ) -> None:
+        """Initialise the ScatNet.
 
         Args:
-            bank (FourierBesselWaveletBank): A configured bank of Fourier-Bessel wavelets.
+            bank (WaveletBank): A configured bank of Fourier-Bessel or Solid Harmonic wavelets.
             backend (str): Device to operate on
+            verbose (bool): Whether to show tqdm progress bar
 
         Raises:
             ImportError: If CuPy requested but no GPU.
@@ -74,16 +81,22 @@ class FourierBesselScatNet:
         if len(bank) <= 1:
             raise ValueError(
                 "The wavelet bank contains no band-pass wavelets (only the "
-                "low-pass filter). FourierBesselScatNet needs at least one "
+                "low-pass filter). ScatNet needs at least one "
                 "wavelet - try constructing the bank with m > 1 and/or k > 1."
             )
         self.xp: Any = cp if self.backend == "gpu" else np
         self.size = bank[0, 0].shape[0]
         self.bank = bank
+        self.verbose = verbose
         self.num_filters = len(bank)
         self.bank_keys = list(bank.get_keys())
         self.low_pass = self.xp.asarray(bank[0, 0], dtype=self.xp.float32)
         self.final_features: Any | None = None
+
+        if isinstance(self.bank, FourierBesselWaveletBank):
+            self.family = "FB"
+        elif isinstance(self.bank, SolidHarmonicsWaveletBank):
+            self.family = "SH"
 
         # Precompute everything that is constant across batches
         xp = self.xp
@@ -121,7 +134,7 @@ class FourierBesselScatNet:
         return spfft.fft2(x, axes=(-2, -1), workers=-1)
 
     def _ifft2(self, x: Any, xp: Any) -> Any:
-        """Backend-aware inverse 2D FFT, mirroring `_fft2`."""
+        """Backend-aware inverse 2D FFT, mirroring _fft2."""
         if self.backend == "gpu":
             return xp.fft.ifft2(x, axes=(-2, -1))
         return spfft.ifft2(x, axes=(-2, -1), workers=-1)
@@ -132,7 +145,7 @@ class FourierBesselScatNet:
         Args:
             xp: The array module to use (numpy or cupy) for this batch.
             freq_signal: Input already in fftshifted frequency domain,
-                broadcastable against `filters`.
+                broadcastable against filters.
             filters: One or a stack of frequency-domain filters to apply.
 
         Returns:
@@ -154,11 +167,11 @@ class FourierBesselScatNet:
         d_size: int,
         downsize: int,
     ) -> Any:
-        """Low-pass smooth a modulus map and block-mean-pool it down to `d_size`.
+        """Low-pass smooth a modulus map and block-mean-pool it down to d_size.
 
         Args:
             xp: The array module to use (numpy or cupy) for this batch.
-            modulus_fft: Output of `_filter_and_modulus`, shape (batch, n_maps, H, W).
+            modulus_fft: Output of _filter_and_modulus, shape (batch, n_maps, H, W).
             low_pass_c: Broadcastable complex low-pass filter.
             batch_size: Number of samples in this batch.
             n_maps: Number of filter channels being pooled.
@@ -303,7 +316,10 @@ class FourierBesselScatNet:
         else:
             results = []
             for batch in tqdm(
-                batches, desc=f"Generating Embeddings on {self.backend.upper()}", unit="batch"
+                batches,
+                desc=f"Generating Embeddings on {self.backend.upper()}",
+                unit="batch",
+                disable=self.verbose,
             ):
                 results.append(_process_batch(batch))
 
@@ -331,7 +347,10 @@ class FourierBesselScatNet:
         try:
             # Joblib generator evaluation wrapped inside tqdm
             with tqdm(
-                total=len(batches), desc="Generating Embeddings (Multiprocessing)", unit="batch"
+                total=len(batches),
+                desc="Generating Embeddings (Multiprocessing)",
+                unit="batch",
+                disable=self.verbose,
             ) as pbar:
                 job_results = Parallel(n_jobs=n_jobs, return_as="generator")(
                     delayed(_process_batch)(b) for b in batches
@@ -347,6 +366,7 @@ class FourierBesselScatNet:
                 Parallel(n_jobs=n_jobs)(delayed(_process_batch)(b) for b in batches),
                 desc="Generating Embeddings (Multiprocessing)",
                 unit="batch",
+                disable=self.verbose,
             ):
                 results.append(res)
 
@@ -357,9 +377,9 @@ class FourierBesselScatNet:
         if self.final_features is None:
             raise ValueError("No embeddings found. Run generate_embeddings() first.")
 
-        m, k, sigma = self.bank.summary(verbose=False)
+        dico = self.bank.summary(verbose=False)
         os.makedirs(path, exist_ok=True)
-        save_path = rf"{path}/embedding_m{m}_k{k}_sigma{sigma}.npz"
+        save_path = rf"{path}/{self.family}_embedding_m{dico['m']}_k{dico['k']}.npz"
 
         features = self.final_features.get() if self.backend == "gpu" else self.final_features
         np.savez_compressed(save_path, embedding=features)

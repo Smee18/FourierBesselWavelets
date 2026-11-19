@@ -140,7 +140,7 @@ def _generate_fourier_bessel_wavelet(
     size: int = 50,
     sigma: float = 1.0,
     norm: str = "l1",
-    freq_limit: int = 20,
+    freq_limit: float = 20.0,
     verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
@@ -207,7 +207,7 @@ def _generate_fourier_low_pass_filter(
     size: int = 50,
     sigma: float = 1.0,
     norm: str = "l1",
-    freq_limit: int = 20,
+    freq_limit: float = 20.0,
     verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     freq = np.linspace(-freq_limit, freq_limit, size)
@@ -261,3 +261,71 @@ def _choose_fourier_bound(
         )
 
     return int(freq_limit)
+
+
+### SOLID HARMONICS ###
+
+
+def _solid_harmonic_wavelet_fourier(
+    m: int,
+    k: int,
+    X: np.ndarray,
+    Y: np.ndarray,
+    verbose: bool = False,
+) -> np.ndarray:
+    """
+    Generates the FULL complex 2D Solid Harmonic Wavelet in the Fourier domain
+    using pre-computed frequency grids.
+    """
+    lambda_val = np.sqrt(X**2 + Y**2)
+    alpha = np.arctan2(Y, X)
+
+    # Apply dyadic dilation (2^j) to the radial frequency
+    lambda_scaled = lambda_val * (2.0**m)
+
+    # Construct the Fourier components
+    prefactor = (-1j) ** k
+    gaussian_envelope = np.exp(-0.5 * lambda_scaled**2)
+    polynomial = lambda_scaled**k
+    complex_phase = np.exp(1j * k * alpha)
+
+    # Combine to form the final complex wavelet
+    Z = prefactor * gaussian_envelope * polynomial * complex_phase
+
+    peak_magnitude_pre = np.max(np.abs(Z))
+    final: np.ndarray = Z / peak_magnitude_pre
+
+    # --- DIAGNOSTIC PRINTS ---
+    if verbose:
+        mean_val = np.abs(np.mean(Z))
+        post_norm_energy = np.max(np.abs(Z))
+
+        logger.info(
+            f"Wavelet (m={m}, k={k}) | "
+            f"Mean (~0): {mean_val:.2e} | "
+            f"{'L1'}: {post_norm_energy:.4f} | "
+        )
+
+    return final
+
+
+def _solid_harmonics_low_pass_filter(
+    m: int,
+    X: np.ndarray,
+    Y: np.ndarray,
+    verbose: bool = False,
+) -> np.ndarray:
+    lambda_val = np.sqrt(X**2 + Y**2)
+    low_pass_filter: np.ndarray = np.exp(-0.5 * (lambda_val * (2.0**m)) ** 2)
+
+    # --- DIAGNOSTIC PRINTS ---
+    if verbose:
+        mean_val = np.abs(np.mean(low_pass_filter))
+        post_norm_energy = np.max(np.abs(low_pass_filter))
+
+        logger.info(
+            f"Wavelet (m={0}, k={0}) | "
+            f"Mean (~0): {mean_val:.2e} | "
+            f"{'L1'}: {post_norm_energy:.4f} | "
+        )
+    return low_pass_filter

@@ -1,14 +1,11 @@
-import logging
+from .bank_class import WaveletBank
+from .fb_bank import FourierBesselWaveletBank
+from .scatnet import ScatNet
+from .sh_bank import SolidHarmonicsWaveletBank
 
-from .generate_bank import FourierBesselWaveletBank
-from .scatnet import FourierBesselScatNet
-
-
-def setup_logger(name: str) -> logging.Logger:
-    logger = logging.getLogger(name)
-    logger.addHandler(logging.NullHandler())
-
-    return logger
-
-
-__all__ = ["FourierBesselWaveletBank", "FourierBesselScatNet"]
+__all__ = [
+    "WaveletBank",
+    "FourierBesselWaveletBank",
+    "SolidHarmonicsWaveletBank",
+    "ScatNet",
+]

@@ -4,7 +4,7 @@ import pytest
 
 matplotlib.use("Agg")
 
-from fbscatnet import FourierBesselScatNet, FourierBesselWaveletBank  # type: ignore
+from fbscatnet import ScatNet, FourierBesselWaveletBank  # type: ignore
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def bank():
 @pytest.fixture
 def net(bank):
     """Fixture providing a standard FourierBesselScatNet initialized with the bank."""
-    return FourierBesselScatNet(bank=bank)
+    return ScatNet(bank=bank)
 
 
 def test_embeddings_use_every_filter_channel(net):
@@ -65,7 +65,7 @@ def test_save_embeddings_round_trips(net, tmp_path):
 
     net.save_embeddings(str(tmp_path))
 
-    saved_files = list(tmp_path.glob("embedding_*.npz"))
+    saved_files = list(tmp_path.glob("FB_embedding_*.npz"))
     assert len(saved_files) == 1
 
     loaded = np.load(saved_files[0])["embedding"]
@@ -83,7 +83,7 @@ def test_gpu_backend_without_cupy_raises(monkeypatch, bank):
     monkeypatch.setattr(scatnet_module, "HAS_CUPY", False)
 
     with pytest.raises(ImportError):
-        FourierBesselScatNet(bank=bank, backend="gpu")
+        ScatNet(bank=bank, backend="gpu")
 
 
 def test_order2_children_exclude_self_and_respect_k_ordering(net):
@@ -103,7 +103,7 @@ def test_visualise_maps_runs_without_error(monkeypatch, net):
 
 
 def test_generate_embeddings_invalid_downsize():
-    net = FourierBesselScatNet(bank=FourierBesselWaveletBank(16, 2, 2), backend="cpu")
+    net = ScatNet(bank=FourierBesselWaveletBank(16, 2, 2), backend="cpu")
 
     size = net.size
     dummy_data = np.random.rand(2, size, size)
