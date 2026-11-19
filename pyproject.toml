@@ -33,6 +33,7 @@ dependencies = [
 gpu = ["cupy-cuda12x>=11.0"]  
 dev = ["pytest", "ruff", "mypy", "pre-commit", "scipy-stubs", "types-tqdm", "build"]
 docs = ["sphinx", "sphinx-rtd-theme", "sphinx-autobuild"]
+examples = ["tensorflow", "scikit-learn", "umap-learn", "seaborn", "joblib", "jupyter"]
 
 [project.urls]
 Homepage = "https://github.com/Smee18/FourierBesselWavelets"
