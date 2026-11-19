@@ -37,7 +37,7 @@ Extracting features from a dataset takes just a few lines of code:
 ```python
 import numpy as np
 import logging
-from fbscatnet import FourierBesselWaveletBank, FourierBesselScatNet, logger_config
+from fbscatnet import FourierBesselWaveletBank, ScatNet, logger_config
 logger_config.enable_colored_logs(logging.DEBUG) # IMPORTANT: SET TO SEE LOGS
 
 # 1. Create some dummy image data (e.g., 10 grayscale images of size 64x64)
@@ -49,7 +49,7 @@ bank = FourierBesselWaveletBank(size=64, m=2, k=2, sigma=0.1)
 
 # 3. Initialize the Scattering Network
 # Use backend="gpu" if you installed with CuPy
-net = FourierBesselScatNet(bank=bank, backend="cpu")
+net = ScatNet(bank=bank, backend="cpu")
 
 # 4. Generate feature embeddings
 # downsize: spatial pooling factor (must evenly divide the image size)
