@@ -30,14 +30,17 @@ except ImportError:
     HAS_CUPY = False
 
 
-def _extract_k(key_str: str) -> int:
-    """Extract the integer 'k' index encoded in a filter bank key string."""
-    match = re.search(r"k[=_ ]*(\d+)", key_str)
+def _extract_index(key_str: str, index: str) -> int:
+    """Extract an integer index ('k' or 'l') encoded in a filter bank key."""
+    if index not in ("k", "l"):
+        raise ValueError(f"Invalid index: {index}. Expected 'k' or 'l'.")
+
+    match = re.search(rf"{index}[=_ ]*(\d+)", key_str)
     if match:
         return int(match.group(1))
-    else:
-        logger.warning("Valid k key not found in '%s', defaulting to 0", key_str)
-        return 0
+
+    logger.warning("Valid %s key not found in '%s', defaulting to 0", index, key_str)
+    return 0
 
 
 class ScatNet:
@@ -95,15 +98,17 @@ class ScatNet:
 
         if isinstance(self.bank, FourierBesselWaveletBank):
             self.family = "FB"
+            self.index = "k"
         elif isinstance(self.bank, SolidHarmonicsWaveletBank):
             self.family = "SH"
+            self.index = "l"
 
         # Precompute everything that is constant across batches
         xp = self.xp
         self.order_1_keys = self.bank_keys[1:]
         self.num_order_1_maps = len(self.order_1_keys)
 
-        self._k_map = {key: _extract_k(key) for key in self.order_1_keys}
+        self._k_map = {key: _extract_index(key, self.index) for key in self.order_1_keys}
 
         self._order2_children: dict[str, list[str]] = {
             key1: [key2 for key2 in self.order_1_keys if self._k_map[key2] < self._k_map[key1]]

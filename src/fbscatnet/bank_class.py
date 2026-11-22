@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, KeysView, ValuesView
+from collections.abc import Iterator, KeysView, ValuesView
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,18 +18,14 @@ class WaveletBank(ABC):
 
         self.size = size
         self.verbose = verbose
-
         self.wavelet_bank: dict[str, np.ndarray] = {}
-        self.index_to_key: dict[tuple, str] = {}
+        self.index_to_key: dict[tuple[int, int], str] = {}
         self._build()
 
     # Children abstract methods to be implemented
-    @abstractmethod
-    def _prepare(self) -> None:
-        """Optional: compute family-specific quantities before building."""
 
     @abstractmethod
-    def _indices(self) -> Iterable[tuple[int, int]]:
+    def _indices(self) -> Iterator[tuple[int, int]]:
         """Yield every valid index tuple, (m, k)"""
 
     @abstractmethod
@@ -37,12 +33,15 @@ class WaveletBank(ABC):
         """Construct the wavelet for one index."""
 
     @abstractmethod
-    def _params(self) -> dict:
+    def _params(self) -> dict[str, int | float | str]:
         """Parameters to show in summary function."""
+
+    @abstractmethod
+    def _make_key(self, index: tuple[int, int]) -> str:
+        """Indexing convetion"""
 
     # Shared wavelet construction function
     def _build(self) -> None:
-        self._prepare()  # Get wavelet specific parameters
         for index in self._indices():
             key = self._make_key(index)  # Create str key for dico
             self.index_to_key[index] = key
@@ -65,7 +64,7 @@ class WaveletBank(ABC):
     def __len__(self) -> int:
         return len(self.wavelet_bank)
 
-    def __iter__(self) -> Iterable[tuple[str, np.ndarray]]:
+    def __iter__(self) -> Iterator[tuple[str, np.ndarray]]:
         return iter(self.wavelet_bank.items())
 
     def get_keys(self) -> KeysView[str]:
@@ -73,10 +72,6 @@ class WaveletBank(ABC):
 
     def get_values(self) -> ValuesView[np.ndarray]:
         return self.wavelet_bank.values()
-
-    def _make_key(self, index: tuple[int, int]) -> str:
-        m, k = index
-        return f"m_{m}_k_{k}"
 
     def summary(self, verbose: bool = True) -> dict:
         params = self._params()  # Extract wavelet specific parameters
@@ -87,37 +82,30 @@ class WaveletBank(ABC):
         return params
 
     # Plotting function to be implemented by children
-    @property
-    @abstractmethod
-    def freq_limit(self) -> float:
-        """Return the frequency limit for plotting the wavelets."""
 
-    @property
     @abstractmethod
-    def m_values(self) -> np.ndarray:
-        """Return the list of m values"""
+    def _grid_layout(self) -> tuple[list[int], list[int], str, str]:
+        """Structure"""
 
-    @property
     @abstractmethod
-    def k_values(self) -> np.ndarray:
-        """Return the list of k values"""
+    def _grid_index(self, row: int, col: int) -> tuple[int, int]:
+        """Structure"""
 
     # Shared plotting function
-
-    def _grid_layout(self) -> tuple[list[int], list[int], str, str]:
-        return list(self.k_values), list(self.m_values), "k", "m"
-
-    def _grid_index(self, row: int, col: int) -> tuple[int, int]:
-        return (int(col), int(row))
-
     def _to_2d(self, Z: np.ndarray) -> np.ndarray:
         return np.real(Z)
 
     def plot_bank(self) -> None:
         rows, cols, row_label, col_label = self._grid_layout()
-        lim = self.freq_limit
-        _, axes = plt.subplots(len(rows), len(cols), figsize=(8, 6), sharex=True, sharey=True)
-        axes = np.atleast_2d(axes)
+        lim = np.pi
+        _, axes = plt.subplots(
+            len(rows),
+            len(cols),
+            figsize=(8, 6),
+            sharex=True,
+            sharey=True,
+            squeeze=False,
+        )
 
         for r, row_val in enumerate(rows):
             for c, col_val in enumerate(cols):

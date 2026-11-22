@@ -137,32 +137,43 @@ def _find_neumann_root_muller(
 def _generate_fourier_bessel_wavelet(
     m: int | np.integer,
     k: int | np.integer,
-    size: int = 50,
+    Q: float | np.ndarray,
+    Psi: float | np.ndarray,
+    dx: float,
     sigma: float = 1.0,
     norm: str = "l1",
-    freq_limit: float = 20.0,
     verbose: bool = False,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> np.ndarray:
+    """
+    Generate a complex Fourier-Bessel wavelet in the frequency domain.
+    Refer to Eq(127) in "Notes on Fourier-Bessel wavelets"
+
+    Args:
+        m: Angular order.
+        k: Radial eigenvalue index.
+        Q: Radial frequency grid.
+        Psi: Angular frequency grid.
+        dx: Frequency grid spacing. for norm verbose
+        sigma: Standard deviation of the Gaussian envelope.
+        norm: Normalisation method ('l1' or 'l2').
+        verbose: Whether to log diagnostic information.
+
+    Returns:
+        The complex wavelet.
+    """
 
     abs_m = np.abs(m)
-    freq = np.linspace(-freq_limit, freq_limit, size)
-    Kx: np.ndarray
-    Ky: np.ndarray
-    Kx, Ky = np.meshgrid(freq, freq, indexing="ij")
-
-    Q = np.sqrt(Kx**2 + Ky**2)
-    Psi = np.arctan2(Ky, Kx)
-
     eigenvalue = _find_neumann_root_muller(abs_m, k)
     sigma2 = sigma**2
     eig2 = eigenvalue**2
     angular_profile = np.exp(1j * m * Psi)
-    K = np.exp(-(eig2 * sigma2) / 2)
+    K = np.exp(-(eig2 * sigma2) / 2)  # Eq(79) in "Notes on Fourier-Bessel wavelets"
+    Z: np.ndarray
 
     mod_bessel = _first_modified_bessel((eig2 * sigma2) / 2, m, True)
     mod_bessel_freq = _first_modified_bessel(eigenvalue * sigma2 * Q, m, True)
 
-    start = (1j**m) * angular_profile
+    start = ((-1j) ** m) * angular_profile
     left_hand = (
         sigma2 * np.exp(-(sigma2 * (eig2 + Q**2)) / 2 + eigenvalue * sigma2 * Q) * mod_bessel_freq
     )
@@ -185,7 +196,6 @@ def _generate_fourier_bessel_wavelet(
 
     # --- DIAGNOSTIC PRINTS ---
     if verbose:
-        dx = freq[1] - freq[0]
         mean_val = np.abs(np.mean(Z))
         if norm == "l2":
             post_norm_energy = np.sum(np.abs(Z) ** 2) * (dx * dx)
@@ -200,21 +210,31 @@ def _generate_fourier_bessel_wavelet(
         )
     # -------------------------
 
-    return Kx, Ky, Z
+    return Z
 
 
 def _generate_fourier_low_pass_filter(
-    size: int = 50,
+    Q: float | np.ndarray,
+    dx: float,
     sigma: float = 1.0,
     norm: str = "l1",
-    freq_limit: float = 20.0,
     verbose: bool = False,
-) -> tuple[np.ndarray, np.ndarray]:
-    freq = np.linspace(-freq_limit, freq_limit, size)
-    Kx: np.ndarray
-    Ky: np.ndarray
-    Kx, Ky = np.meshgrid(freq, freq, indexing="ij")
-    Q = np.sqrt(Kx**2 + Ky**2)
+) -> np.ndarray:
+    """
+    Generate a complex Fourier-Bessel low pass filter in the frequency domain.
+    This is equivalent to the m=0, k=0 wavelet.
+    Refer to Eq(127) in "Notes on Fourier-Bessel wavelets"
+
+    Args:
+        Q: Radial frequency grid.
+        dx: Frequency grid spacing. for norm verbose
+        sigma: Standard deviation of the Gaussian envelope.
+        norm: Normalisation method ('l1' or 'l2').
+        verbose: Whether to log diagnostic information.
+
+    Returns:
+        The real low pass filter.
+    """
 
     sigma2 = sigma**2
     Z = np.exp(-(sigma2) * (Q**2) / 2)
@@ -225,7 +245,6 @@ def _generate_fourier_low_pass_filter(
 
     # --- DIAGNOSTIC PRINTS ---
     if verbose:
-        dx = freq[1] - freq[0]
         mean_val = np.abs(np.mean(Z))
         if norm == "l2":
             post_norm_energy = np.sum(np.abs(Z) ** 2) * (dx * dx)
@@ -233,61 +252,46 @@ def _generate_fourier_low_pass_filter(
             post_norm_energy = np.max(np.abs(Z))
 
         logger.info(
-            f"Low pass  (m=0, k=0) | "
-            f"Mean (>0): {mean_val:.2e} | "
-            f"{norm.upper()}: {post_norm_energy:.4f}"
+            f"Low pass filter | Mean (>0): {mean_val:.2e} | {norm.upper()}: {post_norm_energy:.4f}"
         )
     # -------------------------
 
-    return Q, Z
-
-
-def _choose_fourier_bound(
-    sigma: float, eigenvalue_max: float, size: int, C: float = 4.5, min_samples_per_bump: int = 6
-) -> int:
-    """
-    Calculates the required frequency limit to capture the highest-k wavelet.
-    Forces the domain to fit the wavelets, regardless of image size.
-    """
-    freq_limit = eigenvalue_max + (C / sigma)
-
-    dq = 2 * freq_limit / (size - 1)
-    samples_per_bump = (1 / sigma) / dq
-
-    if samples_per_bump < min_samples_per_bump:
-        print(
-            f"Warning: At size={size}, resolution is low ({samples_per_bump:.1f} pixels per bump). "
-            f"The wavelets will fit completely, but the rings may appear aliased or blocky."
-        )
-
-    return int(freq_limit)
+    return Z
 
 
 ### SOLID HARMONICS ###
 
 
 def _solid_harmonic_wavelet_fourier(
-    m: int,
-    k: int,
-    X: np.ndarray,
-    Y: np.ndarray,
+    j: int,
+    l: int,
+    lambda_val: np.ndarray,
+    alpha: np.ndarray,
     verbose: bool = False,
 ) -> np.ndarray:
     """
-    Generates the FULL complex 2D Solid Harmonic Wavelet in the Fourier domain
-    using pre-computed frequency grids.
+    Generate a complex Solid Harmonic wavelet in the frequency domain.
+    Refer to Section 2.2 of Solid Harmonic Wavelet Scattering (NIPS 2017)
+
+    Args:
+        j: Scale
+        l: Angular order
+        lambda_val: 2D frequency polar coordinates
+        alpha_val: 2D frequency polar coordinates
+        verbose: Whether to log diagnostic information.
+
+    Returns:
+        The complex wavelet.
     """
-    lambda_val = np.sqrt(X**2 + Y**2)
-    alpha = np.arctan2(Y, X)
 
     # Apply dyadic dilation (2^j) to the radial frequency
-    lambda_scaled = lambda_val * (2.0**m)
+    lambda_scaled = lambda_val * (2.0**j)
 
     # Construct the Fourier components
-    prefactor = (-1j) ** k
+    prefactor = (-1j) ** l
     gaussian_envelope = np.exp(-0.5 * lambda_scaled**2)
-    polynomial = lambda_scaled**k
-    complex_phase = np.exp(1j * k * alpha)
+    polynomial = lambda_scaled**l
+    complex_phase = np.exp(1j * l * alpha)
 
     # Combine to form the final complex wavelet
     Z = prefactor * gaussian_envelope * polynomial * complex_phase
@@ -301,31 +305,37 @@ def _solid_harmonic_wavelet_fourier(
         post_norm_energy = np.max(np.abs(final))
 
         logger.info(
-            f"Wavelet (m={m}, k={k}) | "
+            f"Wavelet (j={j}, l={l}) | "
             f"Mean (~0): {mean_val:.2e} | "
-            f"{'L1'}: {post_norm_energy:.4f} | "
+            f"{'L1'}: {post_norm_energy:.4f}"
         )
 
     return final
 
 
 def _solid_harmonics_low_pass_filter(
-    m: int,
-    X: np.ndarray,
-    Y: np.ndarray,
+    j: int,
+    lambda_val: np.ndarray,
     verbose: bool = False,
 ) -> np.ndarray:
-    lambda_val = np.sqrt(X**2 + Y**2)
-    low_pass_filter: np.ndarray = np.exp(-0.5 * (lambda_val * (2.0**m)) ** 2)
+    low_pass_filter: np.ndarray = np.exp(-0.5 * (lambda_val * (2.0**j)) ** 2)
+    """
+    Generate a complex Solid Harmonic low pass filter in the frequency domain.
+    Refer to Section 2.2 of Solid Harmonic Wavelet Scattering (NIPS 2017)
+
+    Args:
+        m: Largest scale
+        lambda_val: 2D frequency polar coordinates
+        verbose: Whether to log diagnostic information.
+
+    Returns:
+        The complex low pass filter.
+    """
 
     # --- DIAGNOSTIC PRINTS ---
     if verbose:
         mean_val = np.abs(np.mean(low_pass_filter))
         post_norm_energy = np.max(np.abs(low_pass_filter))
 
-        logger.info(
-            f"Wavelet (m={0}, k={0}) | "
-            f"Mean (>0): {mean_val:.2e} | "
-            f"{'L1'}: {post_norm_energy:.4f} | "
-        )
+        logger.info(f"Low pass filter | Mean (>0): {mean_val:.2e} | {'L1'}: {post_norm_energy:.4f}")
     return low_pass_filter
