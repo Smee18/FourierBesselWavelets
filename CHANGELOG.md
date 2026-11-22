@@ -2,6 +2,11 @@
 
 ## [Released]
 
-## [1.4.0] - 2026-11-19
+## [1.4.1] - 2026-11-22
 ### Added
-- Implentation of 2D Solid Harmonics
+- General cleanup of WaveletBank class structure
+- Extra value checks for certain parameters
+- Refined test suite
+
+### Fixed
+- Indexing issues in scatnet.py
