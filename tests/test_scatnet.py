@@ -86,11 +86,12 @@ def test_gpu_backend_without_cupy_raises(monkeypatch, bank):
         ScatNet(bank=bank, backend="gpu")
 
 
-def test_order2_children_exclude_self_and_respect_k_ordering(net):
+def test_order2_children_exclude_self_and_respect_radial_ordering(net):
+    index_by_key = {key: index for index, key in net.bank.index_to_key.items()}
     for key1, children in net._order2_children.items():
-        k1 = net._k_map[key1]
+        k1 = index_by_key[key1][1]
         assert key1 not in children
-        assert all(net._k_map[key2] < k1 for key2 in children)
+        assert all(index_by_key[key2][1] < k1 for key2 in children)
 
 
 def test_visualise_maps_runs_without_error(monkeypatch, net):

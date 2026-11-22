@@ -31,14 +31,13 @@ except ImportError:
 
 
 def _extract_index(key_str: str, index: str) -> int:
-    """Extract an integer index ('k' or 'l') encoded in a filter bank key."""
-    if index not in ("k", "l"):
-        raise ValueError(f"Invalid index: {index}. Expected 'k' or 'l'.")
-
+    """Extract an integer index from a legacy filter key.
+    """
+    if index not in ("j", "k", "l", "m"):
+        raise ValueError(f"Invalid index: {index!r}.")
     match = re.search(rf"{index}[=_ ]*(\d+)", key_str)
     if match:
         return int(match.group(1))
-
     logger.warning("Valid %s key not found in '%s', defaulting to 0", index, key_str)
     return 0
 
@@ -74,7 +73,11 @@ class ScatNet:
                 the (0, 0) low-pass filter), since the scattering cascade has
                 nothing to filter with in that case.
         """
+        if not isinstance(backend, str):
+            raise TypeError("backend must be a string ('cpu' or 'gpu').")
         self.backend = backend.lower()
+        if self.backend not in ("cpu", "gpu"):
+            raise ValueError("backend must be either 'cpu' or 'gpu'.")
         if self.backend == "gpu" and not HAS_CUPY:
             raise ImportError(
                 "GPU backend was requested, but 'cupy' is not"
@@ -88,7 +91,12 @@ class ScatNet:
                 "wavelet - try constructing the bank with m > 1 and/or k > 1."
             )
         self.xp: Any = cp if self.backend == "gpu" else np
-        self.size = bank[0, 0].shape[0]
+        if not isinstance(bank, (FourierBesselWaveletBank, SolidHarmonicsWaveletBank)):
+            raise TypeError("bank must be a FourierBesselWaveletBank or SolidHarmonicsWaveletBank.")
+        low_pass = bank[0, 0]
+        if low_pass.ndim != 2 or low_pass.shape[0] != low_pass.shape[1]:
+            raise ValueError("Wavelet filters must be square 2D arrays.")
+        self.size = int(low_pass.shape[0])
         self.bank = bank
         self.verbose = verbose
         self.num_filters = len(bank)
@@ -98,20 +106,25 @@ class ScatNet:
 
         if isinstance(self.bank, FourierBesselWaveletBank):
             self.family = "FB"
-            self.index = "k"
-        elif isinstance(self.bank, SolidHarmonicsWaveletBank):
+        else:
             self.family = "SH"
-            self.index = "l"
 
         # Precompute everything that is constant across batches
         xp = self.xp
         self.order_1_keys = self.bank_keys[1:]
         self.num_order_1_maps = len(self.order_1_keys)
 
-        self._k_map = {key: _extract_index(key, self.index) for key in self.order_1_keys}
+        self._index_by_key = {key: index for index, key in self.bank.index_to_key.items()}
+
+        def _is_valid_second_order(key1: str, key2: str) -> bool:
+            index1 = self._index_by_key[key1]
+            index2 = self._index_by_key[key2]
+            if self.family == "FB":
+                return index2[1] < index1[1]
+            return index2[0] > index1[0]
 
         self._order2_children: dict[str, list[str]] = {
-            key1: [key2 for key2 in self.order_1_keys if self._k_map[key2] < self._k_map[key1]]
+            key1: [key2 for key2 in self.order_1_keys if _is_valid_second_order(key1, key2)]
             for key1 in self.order_1_keys
         }
         self.num_order_2_maps = sum(len(v) for v in self._order2_children.values())
@@ -125,7 +138,7 @@ class ScatNet:
         # Shape: (num_order_1_maps, H, W)
         self._filters_1_stack = xp.stack([self._filters_1[k] for k in self.order_1_keys])
 
-        # Per-key1 stacked children filters for vectorised order-2 filtering.
+        # Per key1 stacked children filters for vectorised order-2 filtering.
         # Shape per entry: (num_children, H, W), or None if no valid children.
         self._filters_2_stack_by_key1: dict[str, Any] = {
             key1: (xp.stack([self._filters_1[k2] for k2 in children]) if children else None)
@@ -145,7 +158,7 @@ class ScatNet:
         return spfft.ifft2(x, axes=(-2, -1), workers=-1)
 
     def _filter_and_modulus(self, xp: Any, freq_signal: Any, filters: Any) -> Any:
-        """Apply wavelet filter(s) in the frequency domain and take the spatial modulus.
+        """Apply wavelet filters in the frequency domain and take the spatial modulus.
 
         Args:
             xp: The array module to use (numpy or cupy) for this batch.
@@ -215,11 +228,34 @@ class ScatNet:
         Returns:
             np.ndarray: Flattened feature embeddings of shape (num_samples, feature_dim).
         """
-        xp = self.xp
-        data = np.asarray(data, dtype=np.float32)
+        if (
+            isinstance(downsize, bool)
+            or not isinstance(downsize, (int, np.integer))
+            or downsize <= 0
+        ):
+            raise ValueError("downsize must be a positive integer.")
+        if (
+            isinstance(batch_size, bool)
+            or not isinstance(batch_size, (int, np.integer))
+            or batch_size <= 0
+        ):
+            raise ValueError("batch_size must be a positive integer.")
 
+        data = np.asarray(data, dtype=np.float32)
+        if data.ndim != 3:
+            raise ValueError("data must have shape (num_samples, height, width).")
+        if data.shape[0] == 0:
+            raise ValueError("data must contain at least one image.")
+        if data.shape[1:] != (self.size, self.size):
+            raise ValueError(
+                f"Each image must have shape ({self.size}, {self.size}); got {data.shape[1:]} ."
+            )
+        if not np.isfinite(data).all():
+            raise ValueError("data must contain only finite values.")
+
+        xp = self.xp
         num_samples = data.shape[0]
-        d_size = int(self.size / downsize)
+        d_size = self.size // downsize
         if (self.size % downsize) != 0:
             raise ValueError(
                 f"Image size ({self.size}) must be exactly divisible by downsize ({downsize})."
@@ -271,7 +307,7 @@ class ScatNet:
             )
 
             # ORDER 2: for each order-1 channel, filter again with only the
-            # wavelets of strictly lower angular index k
+            # wavelets satisfying the family-specific scale/frequency ordering
             batch_pooled_order_2 = b_xp.zeros(
                 (curr_batch_size, d_size, d_size, num_order_2_maps), dtype=b_xp.float32
             )
@@ -384,7 +420,8 @@ class ScatNet:
 
         dico = self.bank.summary(verbose=False)
         os.makedirs(path, exist_ok=True)
-        save_path = rf"{path}/{self.family}_embedding_m{dico['m']}_k{dico['k']}.npz"
+        parameter_suffix = "_".join(f"{name}{value}" for name, value in dico.items())
+        save_path = os.path.join(path, f"{self.family}_embedding_{parameter_suffix}.npz")
 
         features = self.final_features.get() if self.backend == "gpu" else self.final_features
         np.savez_compressed(save_path, embedding=features)
@@ -400,10 +437,25 @@ class ScatNet:
             downsize (int): Spatial downsampling factor. Set to 1 for no downsampling.
         """
 
-        if image.ndim != 2:
-            raise ValueError("Please provide a single 2D image array of shape (height, width).")
+        image = np.asarray(image)
+        if image.ndim != 2 or image.shape != (self.size, self.size):
+            raise ValueError(
+                f"Please provide a single 2D image of shape ({self.size}, {self.size})."
+            )
+        if (
+            isinstance(downsize, bool)
+            or not isinstance(downsize, (int, np.integer))
+            or downsize <= 0
+        ):
+            raise ValueError("downsize must be a positive integer.")
+        if self.size % downsize:
+            raise ValueError(
+                f"Image size ({self.size}) must be exactly divisible by downsize ({downsize})."
+            )
 
-        d_size = int(self.size / downsize)
+        if not np.isfinite(image).all():
+            raise ValueError("image must contain only finite values.")
+        d_size = self.size // downsize
 
         # Add fake batch dimension to match FFT logic
         batch = image[None, ...]
@@ -413,7 +465,8 @@ class ScatNet:
         maps = {}
 
         # ORDER 0
-        low_pass_coeffs = batch_fft * self.low_pass
+        # Plotting is a CPU/Matplotlib operation even when the network backend is GPU.
+        low_pass_coeffs = batch_fft * self.bank[0, 0]
         low_pass_spatial = np.real(
             np.fft.ifft2(np.fft.ifftshift(low_pass_coeffs, axes=(-2, -1)), axes=(-2, -1))
         )[0]

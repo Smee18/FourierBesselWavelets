@@ -305,9 +305,7 @@ def _solid_harmonic_wavelet_fourier(
         post_norm_energy = np.max(np.abs(final))
 
         logger.info(
-            f"Wavelet (j={j}, l={l}) | "
-            f"Mean (~0): {mean_val:.2e} | "
-            f"{'L1'}: {post_norm_energy:.4f}"
+            f"Wavelet (j={j}, l={l}) | Mean (~0): {mean_val:.2e} | {'L1'}: {post_norm_energy:.4f}"
         )
 
     return final
@@ -324,7 +322,7 @@ def _solid_harmonics_low_pass_filter(
     Refer to Section 2.2 of Solid Harmonic Wavelet Scattering (NIPS 2017)
 
     Args:
-        m: Largest scale
+        j: Largest scale
         lambda_val: 2D frequency polar coordinates
         verbose: Whether to log diagnostic information.
 

@@ -1,171 +1,82 @@
+"""Cross-family tests for ScatNet and wavelet-bank integration."""
+
 import numpy as np
 import pytest
 
-from fbscatnet import ScatNet, FourierBesselWaveletBank, SolidHarmonicsWaveletBank  # type: ignore
-from fbscatnet.scatnet import _extract_k  # type: ignore
+from fbscatnet import FourierBesselWaveletBank, ScatNet, SolidHarmonicsWaveletBank
 
 
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_embeddings_use_every_filter_channel(bank_class):
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-    data = np.random.rand(2, 16, 16)
-    features = net.generate_embeddings(data, downsize=2)
-    reshaped = features.reshape(2, 8, 8, -1)
-    channel_sums = np.abs(reshaped).sum(axis=(0, 1, 2))
-    assert np.all(channel_sums > 0), "Some filter channels are dead — check the pooling loop"
+@pytest.fixture(params=["fb", "sh"])
+def bank(request):
+    if request.param == "fb":
+        return FourierBesselWaveletBank(size=16, m=2, k=3)
+    return SolidHarmonicsWaveletBank(size=16, j=3, l=2)
 
 
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_feature_dimension_matches_expected_channel_count(bank_class):
-    """Output width should equal (order0 + order1 + order2 channels) * spatial cells."""
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-    downsize = 2
-    d_size = 16 // downsize
+@pytest.fixture
+def net(bank):
+    return ScatNet(bank=bank, verbose=False)
 
+
+def test_embedding_shape_and_finiteness(net):
+    data = np.random.default_rng(0).random((3, 16, 16), dtype=np.float32)
+    features = net.generate_embeddings(data, downsize=2, batch_size=2)
     expected_channels = 1 + net.num_order_1_maps + net.num_order_2_maps
-    expected_width = expected_channels * d_size * d_size
-
-    data = np.random.rand(3, 16, 16)
-    features = net.generate_embeddings(data, downsize=downsize)
-
-    assert features.shape == (3, expected_width)
+    assert features.shape == (3, expected_channels * 8 * 8)
+    assert np.isfinite(features).all()
 
 
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_downsize_one_produces_full_resolution_features(bank_class):
-    """downsize=1 should skip pooling entirely and keep full spatial resolution."""
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-    downsize = 1
-    d_size = 16 // downsize
-
-    expected_channels = 1 + net.num_order_1_maps + net.num_order_2_maps
-    expected_width = expected_channels * d_size * d_size
-
-    data = np.random.rand(2, 16, 16)
-    features = net.generate_embeddings(data, downsize=downsize)
-
-    assert features.shape == (2, expected_width)
-
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_sequential_and_multiprocessing_agree(bank_class):
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-    data = np.random.rand(4, 16, 16)
-
-    seq_features = net.generate_embeddings(data, downsize=2, batch_size=2)
-    mp_features = net.generate_embeddings(data, downsize=2, batch_size=2, use_multiprocessing=True)
-
-    np.testing.assert_allclose(seq_features, mp_features, rtol=1e-5, atol=1e-6)
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_batch_size_larger_than_dataset(bank_class):
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-    data = np.random.rand(3, 16, 16)
-
+def test_batch_size_larger_than_dataset(net):
+    data = np.random.default_rng(1).random((2, 16, 16), dtype=np.float32)
     features = net.generate_embeddings(data, downsize=2, batch_size=64)
+    assert features.shape[0] == 2
 
-    assert features.shape[0] == 3
 
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_save_embeddings_without_generate_raises(bank_class):
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-
-    with pytest.raises(ValueError):
-        net.save_embeddings("some/path")
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_gpu_backend_without_cupy_raises(monkeypatch, bank_class):
-    import fbscatnet.scatnet as scatnet_module
-
-    monkeypatch.setattr(scatnet_module, "HAS_CUPY", False)
-    bank = bank_class(size=16, m=2, k=2)
-
-    with pytest.raises(ImportError):
-        ScatNet(bank=bank, backend="gpu")
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_constructor_rejects_bank_with_only_low_pass(bank_class):
-    with pytest.raises(ValueError):
-        ScatNet(bank=bank_class(28, 0, 0))
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_order2_children_exclude_self_and_respect_k_ordering(bank_class):
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-
-    for key1, children in net._order2_children.items():
-        k1 = net._k_map[key1]
-        assert key1 not in children
-        assert all(net._k_map[key2] < k1 for key2 in children)
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_filters_1_stack_shape_matches_order_1_maps(bank_class):
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-
-    assert net._filters_1_stack.shape == (net.num_order_1_maps, net.size, net.size)
+def test_save_embeddings_round_trip(net, tmp_path):
+    data = np.random.default_rng(2).random((2, 16, 16), dtype=np.float32)
+    expected = net.generate_embeddings(data, downsize=2)
+    net.save_embeddings(str(tmp_path))
+    files = list(tmp_path.glob("*.npz"))
+    assert len(files) == 1
+    np.testing.assert_allclose(np.load(files[0])["embedding"], expected)
 
 
 @pytest.mark.parametrize(
-    "key,expected",
+    "data,downsize,batch_size",
     [
-        ("m=1_k=2", 2),
-        ("m2k5", 5),
-        ("k_10", 10),
-        ("k 7", 7),
-        ("no_k_here", 0),
+        (np.zeros((2, 16, 16)), 0, 2),
+        (np.zeros((2, 16, 16)), -1, 2),
+        (np.zeros((2, 16, 16)), 2, 0),
+        (np.zeros((0, 16, 16)), 2, 2),
+        (np.zeros((2, 16)), 2, 2),
+        (np.zeros((2, 8, 8)), 2, 2),
     ],
 )
-def test_extract_k_parses_various_key_formats(key, expected):
-    assert _extract_k(key) == expected
-
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_run_multiprocess_falls_back_for_old_joblib(monkeypatch, bank_class):
-    import fbscatnet.scatnet as scatnet_module
-
-    class _FakeParallel:
-        def __init__(self, n_jobs=None, return_as=None):
-            self.n_jobs = n_jobs
-            if return_as is not None:
-                raise TypeError("return_as not supported in this joblib version")
-
-        def __call__(self, tasks):
-            return [func(*args, **kwargs) for func, args, kwargs in tasks]
-
-    monkeypatch.setattr(scatnet_module, "Parallel", _FakeParallel)
-
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-    data = np.random.rand(4, 16, 16)
-
-    features = net.generate_embeddings(data, downsize=2, batch_size=2, use_multiprocessing=True)
-
-    assert features.shape[0] == 4
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_visualise_maps_runs_without_error(monkeypatch, bank_class):
-    import matplotlib.pyplot as plt
-
-    monkeypatch.setattr(plt, "show", lambda: None)
-
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-    image = np.random.rand(16, 16)
-
-    net.visualise_maps(image, downsize=2)
-
-@pytest.mark.parametrize("bank_class", [FourierBesselWaveletBank, SolidHarmonicsWaveletBank])
-def test_visualise_maps_rejects_non_2d_image(bank_class):
-    bank = bank_class(size=16, m=2, k=2)
-    net = ScatNet(bank=bank)
-    bad_image = np.random.rand(2, 16, 16)  # batched, not a single 2D image
-
+def test_invalid_embedding_inputs_raise(net, data, downsize, batch_size):
     with pytest.raises(ValueError):
-        net.visualise_maps(bad_image, downsize=2)
+        net.generate_embeddings(data, downsize=downsize, batch_size=batch_size)
+
+
+def test_backend_validation(bank):
+    with pytest.raises(ValueError, match="backend"):
+        ScatNet(bank, backend="cuda")
+
+
+def test_second_order_paths_follow_family_ordering(net, bank):
+    index_by_key = {key: index for index, key in bank.index_to_key.items()}
+    for parent, children in net._order2_children.items():
+        parent_index = index_by_key[parent]
+        for child in children:
+            child_index = index_by_key[child]
+            if isinstance(bank, FourierBesselWaveletBank):
+                assert child_index[1] < parent_index[1]
+            else:
+                assert child_index[0] > parent_index[0]
+
+
+def test_solid_harmonics_embedding_filename_uses_bank_parameters(tmp_path):
+    bank = SolidHarmonicsWaveletBank(size=16, j=2, l=1)
+    net = ScatNet(bank, verbose=False)
+    net.generate_embeddings(np.ones((1, 16, 16)), downsize=2)
+    net.save_embeddings(str(tmp_path))
+    assert len(list(tmp_path.glob("SH_embedding_j2_l1.npz"))) == 1

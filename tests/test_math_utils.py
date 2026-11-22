@@ -6,11 +6,10 @@ from fbscatnet.math_utils import (
     _find_neumann_root_muller,
     _first_kind_bessel,
     _first_kind_bessel_deriv,
-    _generate_fourier_bessel_wavelet,
-    _generate_fourier_low_pass_filter,
     _solid_harmonic_wavelet_fourier,
-    _solid_harmonics_low_pass_filter
+    _solid_harmonics_low_pass_filter,
 )
+from fbscatnet.fb_bank import FourierBesselWaveletBank
 
 SIZE = 193
 FREQ_LIMIT = 20
@@ -36,15 +35,16 @@ def _fb_radius_grid(size=SIZE, freq_limit=FREQ_LIMIT):
 
 
 def _fb_wavelet(m, k, norm="l2"):
-    _, _, Z = _generate_fourier_bessel_wavelet(
-        m, k, size=SIZE, sigma=SIGMA, norm=norm, freq_limit=FREQ_LIMIT
-    )
-    return Z
+    bank = FourierBesselWaveletBank(size=SIZE, m=max(1, m + 1), k=k + 1,
+                                    sigma=SIGMA, norm=norm)
+    return bank[m, k]
 
 
-def _sh_wavelet(m, k):
+def _sh_wavelet(j, l):
     X, Y = _shifted_meshgrid()
-    return _solid_harmonic_wavelet_fourier(m, k, X, Y)
+    radius = np.hypot(X, Y)
+    angle = np.arctan2(Y, X)
+    return _solid_harmonic_wavelet_fourier(j, l, radius, angle)
 
 
 def _wavelet(impl, m, k):
@@ -188,10 +188,10 @@ def test_solid_harmonic_wavelet_energy_is_away_from_dc(m, k):
 
 def test_low_pass_filter_peaks_at_zero_frequency():
     X, Y = _shifted_meshgrid()
-    _, Z_fb = _generate_fourier_low_pass_filter(
-        size=SIZE, sigma=SIGMA, norm="l1", freq_limit=FREQ_LIMIT
-    )
-    Z_sh = _solid_harmonics_low_pass_filter(SH_LOW_PASS_PARAM, X, Y)
+    fb_bank = FourierBesselWaveletBank(size=SIZE, m=1, k=1, sigma=SIGMA, norm="l1")
+    Z_fb = fb_bank[0, 0]
+    radius = np.hypot(X, Y)
+    Z_sh = _solid_harmonics_low_pass_filter(SH_LOW_PASS_PARAM, radius)
     c = SIZE // 2
     for Z in (Z_fb, Z_sh):
         mag = np.abs(Z)
@@ -214,6 +214,9 @@ def test_solid_harmonic_wavelet_has_unit_peak_magnitude():
 @pytest.mark.parametrize("m,k", [(0, 1), (1, 1), (2, 2)])
 def test_l2_norm_gives_approximately_unit_energy(m, k):
     Z = _fb_wavelet(m, k, norm="l2")
-    dx = (2 * FREQ_LIMIT) / SIZE
+    bank = FourierBesselWaveletBank(
+        size=SIZE, m=max(1, m + 1), k=k + 1, sigma=SIGMA, norm="l2"
+    )
+    dx = bank.dx
     energy = np.sum(np.abs(Z) ** 2) * (dx * dx)
     assert energy == pytest.approx(1.0, rel=0.05)

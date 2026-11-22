@@ -4,9 +4,9 @@ import numpy as np
 
 from .bank_class import WaveletBank
 from .math_utils import (
+    _find_neumann_root_muller,
     _generate_fourier_bessel_wavelet,
     _generate_fourier_low_pass_filter,
-    _find_neumann_root_muller
 )
 
 
