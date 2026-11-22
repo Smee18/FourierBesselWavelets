@@ -31,8 +31,7 @@ except ImportError:
 
 
 def _extract_index(key_str: str, index: str) -> int:
-    """Extract an integer index from a legacy filter key.
-    """
+    """Extract an integer index from a legacy filter key."""
     if index not in ("j", "k", "l", "m"):
         raise ValueError(f"Invalid index: {index!r}.")
     match = re.search(rf"{index}[=_ ]*(\d+)", key_str)
